@@ -7,6 +7,8 @@ output:
     toc: true
     toc_float: true
     code_folding: hide
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -313,7 +315,7 @@ div <- dfl0 %>%
     left_join(labs, by = "id") %>% 
     left_join(rar1, by = "id") %>% 
     select(abu, nsp, i10, i20, i25, shan, id, 
-           coast, skew, soil, substrate, zone, veg, dom.comp) %>% 
+           coast, skew, soil, substrate, zone, veg) %>% # , dom.comp
     filter(shan > 0)
 ```
 
@@ -321,7 +323,8 @@ div <- dfl0 %>%
 
 ```{r}
 div %>% 
-    pivot_longer(names_to = "diversity", values_to = "val", -c(7:ncol(.))) %>% 
+    pivot_longer(names_to = "diversity", 
+                 values_to = "val", -c(7:ncol(.))) %>% 
     ggplot(aes(x = coast, y = val, fill = coast)) + 
     geom_boxplot() + 
     facet_wrap(~diversity, scales = "free") + 
