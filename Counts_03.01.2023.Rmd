@@ -3,10 +3,12 @@ title: "Kaspian mites"
 author: "Sozontov"
 date: "2022-11-10"
 output:
-  html_document:
-    toc: true
-    toc_float: true
+  html_document: 
+    toc: yes
+    toc_float: yes
     code_folding: hide
+    toc_depth: 2
+    dev: 'svg'
 editor_options: 
   chunk_output_type: console
 ---
@@ -15,242 +17,19 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
-## Загрузка
+# Загрузка{.tabset}
+
+## Пакеты
 
 ```{r packages_load}
-library(tidyverse)
 library(vegan)
-# library(dendextend)
-library(iNEXT)
+library(tidyverse)
 theme_set(theme_bw() + theme(legend.position = "bottom"))
-```
 
-```{r data_load}
-taxa <- readxl::read_xlsx("Caspian data_15.09.2022_SA.xlsx", sheet = "taxa")
-labs <- readxl::read_xlsx("Caspian data_15.09.2022_SA.xlsx", sheet = "samples")
-df   <- readxl::read_xlsx("Caspian data_15.09.2022_SA.xlsx", sheet = "main")
-
-# 0 = 6468
-# !0 = 536
-
-dfw <- df %>% 
-    mutate_all(as.character) %>% #equalize all columns
-    pivot_longer(names_to = "id", values_to = "abu", -sp) %>% 
-    filter(sp != "Oribatida Juvenile instars", abu != "0") %>% 
-    # temporary filter !!!
-    filter(!(id %in% c("SmPbAe1", "SmPbAe2", "SmPbAe3", "SmPbAe4", "SmPbAe5"))) %>% 
-    # temporary filter !!!
-    left_join(select(taxa, sp, order), by = "sp") %>% 
-    filter(order == "Oribatida") %>% 
-    left_join(select(labs, id, distr), by = "id") %>% 
-    filter(distr == "Samoor") %>% 
-    select(-order, -distr) %>% 
-    separate(col = abu, into = c("adu", "juv"), sep = "\\+", fill = "right") %>% 
-    mutate(adu = as.numeric(adu), juv = as.numeric(juv), 
-           juv = case_when(is.na(juv) ~ 0, TRUE ~ juv)) %>% 
-    transmute(sp, id, abu = adu + juv) %>% 
-    pivot_wider(names_from = id, values_from = abu, values_fill = 0)
-
-dfl <- dfw %>% pivot_longer(names_to = "id", values_to = "abu", -sp)
-
-dfl0 <- dfl %>% 
-    mutate(id = substr(id, 1, nchar(id)- 1)) %>% 
-    group_by(sp, id) %>% 
-    summarise(abu = sum(abu), .groups = "drop")
-dfw0 <- dfl0 %>% 
-    pivot_wider(names_from = id, values_from = abu)
-
-# labs <- labs %>% 
-#     select(id, plants.d, plants.sp) %>% 
-#     unite("p", 2:3, sep = ", ") %>% 
-#     column_to_rownames("id") %>% 
-#     t %>% 
-#     as.data.frame() %>%
-#     as.list() %>% 
-#     lapply(FUN = function(a){ # No.of plants in dominant complex
-#         str_split(a, ", ") %>% 
-#             .[[1]] %>% 
-#             unique %>% 
-#             length
-#         }) %>% 
-#     map_dbl(c) %>% 
-#     tibble(id = names(.), dom.comp = .) %>% 
-#     left_join(labs, ., by = "id") %>% 
-#     mutate(veg = factor(veg, ordered = TRUE), 
-#            dom.comp = factor(dom.comp, ordered = TRUE))
-
-labs %>% 
-    filter(distr == "Samoor") %>% 
-    # transmute(id = code, veg, # = factor(veg, ordered = TRUE)
-    #           RH, skew, zone, zone.width, substrate, soil) %>% 
-    group_by(code) %>% 
-    summarise(veg = mean(veg), RH = mean(RH), 
-              coast = unique(coast), skew = unique(skew), 
-              soil = unique(soil), substrate = unique(substrate), 
-              zone = unique(zone), zone.width = mean(zone.width))
-```
-
-```{r indval}
-indval <- function(dat, clas = colnames(dat), spec = rownames(dat), 
-                   method = "APCF", rawdata = FALSE, significance = FALSE, 
-                   nboot = 999) { 
-
-# Variables description: see the function's previous version
-# The function works by different ways with 0 and NA in matrix:
-#    0 means abcence and involved to calculations
-#    NA means `no data` and skipped of calculations
-    
-        
-# test & pre-processing unit ----------------------------------------------
-    dat <- as.matrix(dat)
-    # dat[is.na(dat)] <- 0
-    if(!is.numeric(dat)) {show("Your data aren't numeric"); break}
-    if(sum(dat, na.rm = TRUE) <= 0) {show("Your data are empty or negative"); break}
-    if(length(clas) != ncol(dat)) {show("Classification size error"); break}
-    if(length(spec) != nrow(dat)) {show("Species number error"); break}
-    if(!(method %in% c("APCF", "ACF", "ASF", "PCF", "PSF"))) {
-        show("You selected unknown type of IndVal
-try one of this: APCF, ACF, ASF, #PCF, #PSF"); break}
-    clas[clas == "NA"] <- NA
-    g <- unique(clas) |> sort() |> na.omit()
-    
-# Selecting unit ----------------------------------------------------------
-    if(method == "APCF") { 
-        calcA <- function(d, clas) { 
-            res0 <- rep(NA, length(g))
-            names(res0) <- g
-            res <- rep(NA, length(g))
-            names(res) <- g
-            for(h in 1:length(g)) {
-                res0[h] <- mean(d[clas == g[h]], na.rm = TRUE)
-            }
-            res0[is.nan(res0)] <- NA
-            for(h in g){ 
-                res[[h]] <- res0[[h]]/sum(res0, na.rm = TRUE)
-                }
-            return(res)
-            }
-        calcB <- function(d, clas) { 
-            res <- rep(NA, length(g))
-            names(res) <- g
-            d[d>0] <- 1
-            for(j in g)
-                res[[j]] <- mean(d[which(clas == j)], na.rm = TRUE)
-            return(res)
-            }
-    }
-    if(method == "ACF") { 
-        calcA <- function(d, clas) { 
-            res0 <- rep(NA, length(g))
-            names(res0) <- g
-            res <- rep(NA, length(g))
-            names(res) <- g
-            for(h in 1:length(g)) {
-                res0[h] <- mean(d[clas == g[h]], na.rm = TRUE)
-            }
-            res0[is.nan(res0)] <- NA
-            for(h in g){ 
-                res[[h]] <- res0[[h]]/sum(res0, na.rm = TRUE)
-            }
-            return(res)
-        }
-        calcB <- function(d, clas) { 
-            res <- rep(NA, length(g))
-            names(res) <- g
-            for(j in g) { 
-                e <- d[clas == j] |> na.omit()
-                res[[j]] <- 1 - sum(abs(e/sum(e) - 1/length(e)))*0.5
-            }
-            res[is.nan(res)] <- 0
-            return(res)
-        }
-    }
-    if(method == "ASF") { 
-        calcA <- function(d, clas) { 
-            res0 <- rep(NA, length(g))
-            names(res0) <- g
-            res <- rep(NA, length(g))
-            names(res) <- g
-            for(h in g) { 
-                res0[[h]] <- mean(d[clas == h], na.rm = TRUE)
-            }
-            res0[is.nan(res0)] <- NA
-            for(h in g) { 
-                res[[h]] <- (res0[[h]] - mean(res0[names(res0) != h], 
-                    na.rm = TRUE)) / max(res0, na.rm = TRUE)
-            }
-            return(res)
-        }
-        calcB <- function(d, clas) { 
-            res <- rep(NA, length(g))
-            names(res) <- g
-            for(j in g) { 
-                e <- d[clas == j] |> na.omit()
-                res[[j]] <- 1 - sum(abs(e/sum(e) - 1/length(e)))*0.5
-            }
-            res[is.nan(res)] <- 0
-            return(res)
-        }
-    }
-
-# computational unit ------------------------------------------------------
-    A <- matrix(NA, nrow = length(spec), 
-        ncol = length(g))
-    colnames(A) <- g
-    rownames(A) <- spec
-    B <- A
-    for(i in 1:nrow(A)) { 
-        A[i,] <- calcA(dat[i,], clas)
-        B[i,] <- calcB(dat[i,], clas)
-    }
-    res <- A*B*100
-    res[is.nan(res)] <- NA
-    S <-  mean(abs(res), na.rm = TRUE)
-    
-# permutational test ------------------------------------------------------
-    if(significance == TRUE) { 
-        library(parallel)
-        library(doParallel)
-        library(foreach)
-        clas2 <- matrix(NA, ncol = length(clas), nrow = nboot)
-        for(i in 1:nrow(clas2)) { 
-            clas2[i,] <- sample(clas, length(clas))
-        }
-        myCluster <- makeCluster(detectCores()-1)
-        registerDoParallel(myCluster)
-        permutated <- foreach(i = 1:nboot, .combine = 'c') %dopar% {
-            res2 <- matrix(NA, nrow = length(spec), ncol = length(g))
-            for(j in 1:nrow(res2)) {
-                res2[j,] <- 100 * 
-                    calcA(dat[j,], clas2[i,]) 
-                    calcB(dat[j,], clas2[i,])
-            }
-            mean(abs(res2), na.rm = TRUE)
-        }
-        stopCluster(myCluster)
-        S2 <- (S - mean(c(S, permutated), na.rm = TRUE))/sd(c(S, permutated))
-    }
-
-# Return results ----------------------------------------------------------
-    if(rawdata == FALSE & significance == FALSE) {return(
-        list(Method = method, Sharpness = S, indval = res))
-    }
-    if(rawdata == TRUE  & significance == FALSE) {return(
-        list(Method = method, Sharpness = S, indval = res, A = A, B = B))
-    }
-    if(rawdata == FALSE & significance == TRUE)  {return(
-        list(Method = method, Sharpness = S, Significance = S2, indval = res)) 
-    }
-    if(rawdata == TRUE  & significance == TRUE)  {return(list(Method = method,
-        Sharpness = S, Significance = S2, indval = res, A = A, B = B) )
-    }
-}
-```
-
-```{r other_functions}
 collapse_labels <- function(a){
     paste(names(sort(table(a), decreasing = TRUE)), collapse = " or ")
 }
+
 colorise_labels <- function(a) {
     n <- length(unique(a))
     clr <- hcl(h = seq(15, 375, length = n + 1), 
@@ -259,24 +38,32 @@ colorise_labels <- function(a) {
         left_join(data.frame(l = a), ., by = "l") %>% 
         pull(clr)
 }
-count1 <- function(d) {
-    d <- d %>% 
-        pivot_wider(names_from = "sp", values_from = abu, values_fill = 0) 
-    dis <- vegan::vegdist(d[,-1])
-    PCOA <- ape::pcoa(dis)
-    tibble(d[,1],
-           abu  = apply(d[,-1], 1, function(a){sum(a)}),
-           nsp  = apply(d[,-1], 1, function(a){length(a[a>0])}),
-           shan = apply(d[,-1], 1, function(a){vegan::diversity(a, "shannon")}),
-           ax.1 = PCOA$vectors[,1], 
-           ax.2 = PCOA$vectors[,2]
-    )
-}
+```
+
+## Данные{.tabset}
+
+### Acari
+
+```{r dataLoad}
+load(paste0(Sys.Date(), "_results.RData"))
+formattable::formattable(dfw)
+```
+
+### Taxa
+
+```{r}
+formattable::formattable(taxa)
+```
+
+### Results
+
+```{r}
+formattable::formattable(div)
 ```
 
 # Вопрос 5 {.tabset}
 
-5. Связано ли видовое разнообразие почвенных клещей (Oribatida, Mesostigmata) отдельных типов берега со сложностью растительного покрова (числом гипсометрических зон, биотопов или синузий видов сосудистых растений)? 
+5. Связано ли видовое разнообразие почвенных клещей (Oribatida, Mesostigmata) отдельных типов берега со сложностью растительного покрова (числом гипсометрических зон, биотопов или синузий видов сосудистых растений)?
 
 — Связано, на песчаном пляже видовое богатство выше, но надо «выровнять» по числу проб.
 
@@ -293,30 +80,7 @@ i10 - ожидаемое количество видов в пробе из 10 �
 i25 - ожидаемое количество видов в пробе из 25 особей 
 
 ```{r}
-rar1 <- dfw0 %>% 
-    select(-sp) %>% 
-    lapply(function(a){sort(a[a>0], decreasing = TRUE)}) %>% 
-    discard(~ length(.x) < 2) %>% 
-    iNEXT::iNEXT(., q = 0, size = c(10, 20, 25), 
-                 datatype = "abundance", nboot = 9) %>% # 999
-    pluck("iNextEst", "size_based") %>% 
-    filter(m %in% c(10, 20, 25)) %>% 
-    select(id = Assemblage, m, qD) %>% 
-    mutate(m = paste0("i", m)) %>% 
-    pivot_wider(names_from = m, values_from = qD)
 
-div <- dfl0 %>% 
-    pivot_wider(names_from = "sp", values_from = abu, values_fill = 0) %>% 
-    mutate(
-        abu  = apply(.[,-1], 1, function(a){sum(a)}), 
-        nsp  = apply(.[,-1], 1, function(a){length(a[a>0])}),
-        shan = apply(.[,-1], 1, function(a){vegan::diversity(a, "shannon")}),
-        .before = 2) %>% 
-    left_join(labs, by = "id") %>% 
-    left_join(rar1, by = "id") %>% 
-    select(abu, nsp, i10, i20, i25, shan, id, 
-           coast, skew, soil, substrate, zone, veg) %>% # , dom.comp
-    filter(shan > 0)
 ```
 
 ## coast type
