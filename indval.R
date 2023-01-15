@@ -1,5 +1,7 @@
 indval <- function(dat, clas = colnames(dat), spec = rownames(dat), 
-                   method = "APCF", rawdata = FALSE, significance = FALSE, 
+                   method = "APCF", 
+                   rawdata = FALSE, 
+                   significance = FALSE, 
                    nboot = 999) { 
     
     # Variables description: see the function's previous version
