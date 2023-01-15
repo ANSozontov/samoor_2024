@@ -1,7 +1,7 @@
 # 1. Load data ------------------------------------------------------------
+suppressMessages(library(tidyverse))
 library(parallel) # are you sure
-library(tidyverse)
-library(sf)
+# library(sf)
 # library(vegan)
 source("indval.R")
 
@@ -40,7 +40,7 @@ rar1 <- dfw %>%
     discard(~ length(.x) < 2) %>% 
     parLapply(cl, ., function(a){
         b <- iNEXT::iNEXT(a, q = 0, size = c(25), 
-                 datatype = "abundance", nboot = 99) # 999
+                 datatype = "abundance", nboot = 999) # 999
         b <- b[["iNextEst"]][["size_based"]]
         b[b$m == 25,c("qD")]
     }) %>% 
@@ -94,11 +94,10 @@ div <- div %>%
     left_join(pcoa_n, by = "id") %>% 
     left_join(pcoa_q, by = "id")
 
-# spatial -----------------------------------------------------------------
-points <- readxl::read_xlsx(
-    "Caspian data_15.09.2022_SA.xlsx", 
-    sheet = "samples") %>% 
-    filter(distr == "Samoor") 
+# points <- readxl::read_xlsx(
+#     "Caspian data_15.09.2022_SA.xlsx", 
+#     sheet = "samples") %>% 
+#     filter(distr == "Samoor") 
 
 # export data -------------------------------------------------------------
 rm(list = ls()[!(ls() %in% c("dfl", "dfw", "labs", "taxa", "div", "dist_n", "dist_q"))])
