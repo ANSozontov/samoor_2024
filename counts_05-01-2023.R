@@ -1,7 +1,7 @@
 # 1. Load data ------------------------------------------------------------
 suppressMessages(library(tidyverse))
 library(parallel) # are you sure
-# library(sf)
+# library(sf) #111
 # library(vegan)
 source("indval.R")
 
