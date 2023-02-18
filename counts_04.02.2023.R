@@ -10,7 +10,7 @@ long <- readxl::read_excel("Caspian data_03.02.2023_SA.xlsx", sheet = "main") %>
     separate(v, into = c("ad", "jv"), sep = "\\+", convert = TRUE) %>% # 
     pivot_longer(names_to = "age", values_to = "abu", -c(1:3)) %>% 
     filter(!is.na(abu)) %>% 
-    mutate(id = substr(id, 3, 7)) %>% 
+    mutate(id = substr(id, 3, 7), id = str_replace_all(id, "_", "")) %>% 
     arrange(id)
 or.w <- long %>% 
     filter(O == "Oribatida", sp != "Oribatida_juvenile_indet") %>% 
@@ -27,7 +27,10 @@ ms.w <- long %>%
 
 labs <- readxl::read_excel("Caspian data_03.02.2023_SA.xlsx", sheet = "samples") %>% 
     filter(distr == "Samoor") %>% 
-    transmute(id = substr(id, 3, 7), coast, skew) ####
+    transmute(id = substr(id, 3, 7), coast, skew, 
+              soil, substrate, zone,
+              vegetation = veg, plants.d) %>% 
+    separate(plants.d, sep = " ", into = "plants.d", extra = "drop")
 
 # rarefication ------------------------------------------------------------
 # Oribatida - d20
@@ -45,7 +48,7 @@ div <- or.w %>%
             dplyr::filter(mm == "qD" | Method == "Observed") |> 
             dplyr::mutate(Method = dplyr::case_when(Method == "Observed" ~ "orb_obs", TRUE ~ "orb_d20")) |> 
             tidyr::pivot_wider(names_from = c("Method", "mm"), values_from = vv) |> 
-            dplyr::mutate(or.iH = vegan::diversity(a))
+            dplyr::mutate(orb_iH = vegan::diversity(a))
         }) %>% 
     map_df(rbind, .id = "id") %>% 
     left_join(labs, ., by = "id")
@@ -62,9 +65,9 @@ div <- ms.w %>%
             dplyr::filter(m == 10 | Method == "Observed") |> 
             tidyr::pivot_longer(names_to = "mm", values_to = "vv", -Method) |>
             dplyr::filter(mm == "qD" | Method == "Observed") |> 
-            dplyr::mutate(Method = dplyr::case_when(Method == "Observed" ~ "ms_obs", TRUE ~ "mst_d10")) |> 
+            dplyr::mutate(Method = dplyr::case_when(Method == "Observed" ~ "mst_obs", TRUE ~ "mst_d10")) |> 
             tidyr::pivot_wider(names_from = c("Method", "mm"), values_from = vv) |> 
-            dplyr::mutate(ms.iH = vegan::diversity(a))
+            dplyr::mutate(mst_iH = vegan::diversity(a))
     }) %>% 
     map_df(rbind, .id = "id") %>% 
     left_join(div, ., by = "id")
@@ -122,9 +125,10 @@ PCOA <- dis %>%
                axis2 = p$vectors[,2]) 
         list(eig = e, pc = p)
     }) %>% 
-    transpose()
+    purrr::transpose()
 
 
-# whatsnext ---------------------------------------------------------------
-
+# export ---------------------------------------------------------------
+rm(cl)
+save.image("17.02.2023.RData")
 
