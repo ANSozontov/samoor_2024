@@ -168,7 +168,70 @@ div %>%
          y = NULL, x = "Dominant plant species") + 
     theme(axis.text.x = element_text(angle = 30, hjust = 0.9))
 
+
+# dissimilarity -----------------------------------------------------------
+dis2 <- list()
+dis2$or.bin <- or.w %>% 
+    select(!starts_with("Sw")) %>% 
+    column_to_rownames("sp") %>% 
+    select_if(function(a){sum(a)>0}) %>% 
+    t %>% 
+    as.data.frame() %>% 
+    vegan::vegdist(method = "jaccard", binary = TRUE)
+dis2$or.num <- or.w %>% 
+    select(!starts_with("Sw")) %>% 
+    column_to_rownames("sp") %>% 
+    select_if(function(a){sum(a)>0}) %>% 
+    t %>% 
+    as.data.frame() %>% 
+    vegan::vegdist(method = "bray", binary = FALSE)
+dis2$ms.bin <- ms.w %>% 
+    select(!starts_with("Sw")) %>% 
+    column_to_rownames("sp") %>% 
+    select_if(function(a){sum(a)>0}) %>% 
+    t %>% 
+    as.data.frame() %>% 
+    vegan::vegdist(method = "jaccard", binary = TRUE)
+dis2$ms.num <- ms.w %>% 
+    select(!starts_with("Sw")) %>% 
+    column_to_rownames("sp") %>% 
+    select_if(function(a){sum(a)>0}) %>% 
+    t %>% 
+    as.data.frame() %>% 
+    vegan::vegdist(method = "bray", binary = FALSE)
+
 # Multidimensional --------------------------------------------------------
+PCOA2 <- dis2 %>% 
+    lapply(function(a){
+        p <- ape::pcoa(a)
+        e <- p$values$Eigenvalues
+        if(min(e) < 0){
+            e <- e + abs(min(e))
+            e <- round(e/sum(e)*100, 1)
+        } else { 
+            e <- round(e/sum(e)*100, 1)
+        }
+        p <- tibble::tibble(id = rownames(p$vectors), 
+                            axis1 = p$vectors[,1], 
+                            axis2 = p$vectors[,2]) 
+        list(eig = e, pc = p)
+    }) %>% 
+    purrr::transpose()
+
+M2 <- PCOA2 %>% 
+    pluck("pc") %>% 
+    map_df(rbind, .id = "D") %>% 
+    separate(D, into = c("taxa", "type")) %>% 
+    left_join(div, by = "id") %>% 
+    select(taxa:plants.d) %>% 
+    mutate(
+        axis1 = case_when(taxa == "ms" & type == "bin" ~ axis1*-1, TRUE ~ axis1),
+        axis1 = case_when(taxa == "or" & type == "bin" ~ axis1*-1, TRUE ~ axis1),
+        taxa = case_when(taxa == "or" ~ "Oribatida", TRUE ~ "Mesostigmata"), 
+        type = case_when(type == "bin" ~ "Binary data", 
+                         TRUE ~ "Numeric data")) %>% 
+    filter(!is.na(coast))
+
 M <- PCOA %>% 
     pluck("pc") %>% 
     map_df(rbind, .id = "D") %>% 
@@ -177,21 +240,28 @@ M <- PCOA %>%
     select(taxa:plants.d) %>% 
     mutate(
         axis1 = case_when(taxa == "ms" & type == "bin" ~ axis1*-1, TRUE ~ axis1),
+        # axis1 = case_when(taxa == "or" & type == "bin" ~ axis1*-1, TRUE ~ axis1),
         taxa = case_when(taxa == "or" ~ "Oribatida", TRUE ~ "Mesostigmata"), 
         type = case_when(type == "bin" ~ "Binary data", 
-                            TRUE ~ "Numeric data")) %>% 
+                         TRUE ~ "Numeric data")) %>% 
     filter(!is.na(coast))
+
 # general
 plotly::ggplotly(
-ggplot(M, aes(x = axis1, y = axis2, color = id)) + 
-    geom_point() + 
-    facet_grid(rows = vars(type), cols = vars(taxa)) + 
-    labs(x = NULL, y = NULL, title = "General topology") + 
-    theme(legend.position = "none")
+    ggplot(M, aes(x = axis1, y = axis2, color = id)) + 
+        geom_point() + 
+        facet_grid(rows = vars(type), cols = vars(taxa)) + 
+        labs(x = NULL, y = NULL, title = "General topology") + 
+        theme(legend.position = "none")
 )
 
 #coast
 ggplot(M, aes(x = axis1, y = axis2, color = coast)) + 
+    geom_point() + 
+    stat_ellipse() +
+    facet_grid(rows = vars(type), cols = vars(taxa)) + 
+    labs(x = NULL, y = NULL) 
+ggplot(M2, aes(x = axis1, y = axis2, color = coast)) + 
     geom_point() + 
     stat_ellipse() +
     facet_grid(rows = vars(type), cols = vars(taxa)) + 
@@ -203,7 +273,11 @@ ggplot(M, aes(x = axis1, y = axis2, color = skew)) +
     stat_ellipse() +
     facet_grid(rows = vars(type), cols = vars(taxa)) + 
     labs(x = NULL, y = NULL) 
-
+ggplot(M2, aes(x = axis1, y = axis2, color = skew)) + 
+    geom_point() + 
+    stat_ellipse() +
+    facet_grid(rows = vars(type), cols = vars(taxa)) + 
+    labs(x = NULL, y = NULL) 
 # soil
 ggplot(M, aes(x = axis1, y = axis2, color = soil)) + 
     geom_point() + 
@@ -214,42 +288,28 @@ ggplot(M, aes(x = axis1, y = axis2, color = soil)) +
 # plants.d
 M %>% 
     # filter(taxa != "Mesostigmata" & type == "Numeric data") %>% 
-ggplot(aes(x = axis1, y = axis2, color = plants.d)) + 
+    ggplot(aes(x = axis1, y = axis2, color = plants.d)) + 
+    geom_point() + 
+    stat_ellipse() +
+    facet_grid(rows = vars(type), cols = vars(taxa)) + 
+    labs(x = NULL, y = NULL, color = "Dominant plant species")
+M2 %>% 
+    # filter(taxa != "Mesostigmata" & type == "Numeric data") %>% 
+    ggplot(aes(x = axis1, y = axis2, color = plants.d)) + 
     geom_point() + 
     stat_ellipse() +
     facet_grid(rows = vars(type), cols = vars(taxa)) + 
     labs(x = NULL, y = NULL, color = "Dominant plant species")
 
-# dissimilarity -----------------------------------------------------------
-dis <- list()
-dis$or.bin <- or.w %>% 
-    column_to_rownames("sp") %>% 
-    select_if(function(a){sum(a)>0}) %>% 
-    t %>% 
-    as.data.frame() %>% 
-    vegan::vegdist(method = "jaccard", binary = TRUE)
-dis$or.num <- or.w %>% 
-    column_to_rownames("sp") %>% 
-    select_if(function(a){sum(a)>0}) %>% 
-    t %>% 
-    as.data.frame() %>% 
-    vegan::vegdist(method = "bray", binary = FALSE)
-dis$ms.bin <- ms.w %>% 
-    column_to_rownames("sp") %>% 
-    select_if(function(a){sum(a)>0}) %>% 
-    t %>% 
-    as.data.frame() %>% 
-    vegan::vegdist(method = "jaccard", binary = TRUE)
-dis$ms.num <- ms.w %>% 
-    column_to_rownames("sp") %>% 
-    select_if(function(a){sum(a)>0}) %>% 
-    t %>% 
-    as.data.frame() %>% 
-    vegan::vegdist(method = "bray", binary = FALSE)
-
 # permanova ---------------------------------------------------------------
-
-vegan::adonis2(dis$or.bin ~ coast + soil + vegetation + plants.d, data = div)
+vegan::adonis2(dis2$or.bin ~ coast + soil + vegetation + plants.d, 
+               data = filter(labs, id %in% attr(dis2$or.bin, "Labels")))
+vegan::adonis2(dis2$or.num ~ coast + soil + vegetation + plants.d, 
+               data = filter(labs, id %in% attr(dis2$or.num, "Labels")))
+vegan::adonis2(dis2$ms.bin ~ coast + soil + vegetation + plants.d, 
+               data = filter(labs, id %in% attr(dis2$ms.bin, "Labels")))
+vegan::adonis2(dis2$ms.num ~ coast + soil + vegetation + plants.d, 
+               data = filter(labs, id %in% attr(dis2$ms.num, "Labels")))
 
 
 # For future  -------------------------------------------------------------
