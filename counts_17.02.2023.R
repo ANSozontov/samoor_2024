@@ -315,3 +315,15 @@ vegan::adonis2(dis2$ms.num ~ coast + soil + vegetation + plants.d,
 # For future  -------------------------------------------------------------
 # hill profiles 
 # cluster analysis 
+
+# map ---------------------------------------------------------------------
+# library(leaflet)
+# 
+# readxl::read_excel("Caspian data_03.02.2023_SA.xlsx", sheet = "samples") %>% 
+#     filter(distr == "Samoor") %>% 
+#     transmute(id = substr(id, 3, 7), coast, skew, 
+#               soil, substrate, veg, plants.d, N, E)
+
+
+
+
