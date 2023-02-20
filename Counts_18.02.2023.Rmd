@@ -1,5 +1,5 @@
 ---
-title: "Kaspian mites"
+title: "Caspian mites: Samoor"
 author: "Sozontov"
 date: "2023-02-18"
 output:
@@ -17,8 +17,6 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
-# Данные{.tabset}
-
 ```{r}
 suppressMessages(library(tidyverse))
 suppressMessages(library(vegan))
@@ -33,48 +31,6 @@ div <- div %>%
         vegetation = case_when(vegetation == "no" ~ "0", TRUE ~ vegetation), 
         vegetation = factor(as.numeric(vegetation), ordered = TRUE)
 )
-```
-
-## Обилие общее
-
-```{r}
-formattable::formattable(div[,c(1,17:20)])
-```
-
-## Разнообразие Oribatida
-
-```{r}
-div %>% 
-    select(id, 
-           `Abundance` = orb_obs_m, 
-           `Number of species` = orb_obs_qD, 
-           `Rarefied number of species` = orb_d20_qD, 
-           `Shannon index` = orb_iH) %>% 
-    mutate_at(c("Abundance", "Number of species"), function(a){a[is.na(a)] <- 0; a}) %>% 
-    formattable::formattable()
-```
-
-## Разнообразие Mesostigmata
-
-```{r}
-div %>% 
-    select(id, 
-           `Abundance` = mst_obs_m, 
-           `Number of species` = mst_obs_qD, 
-           `Rarefied number of species` = mst_d10_qD, 
-           `Shannon index` = mst_iH) %>% 
-    mutate_at(c("Abundance", "Number of species"), function(a){a[is.na(a)] <- 0; a}) %>% 
-    formattable::formattable()
-```
-
-## Параметры среды
-
-```{r}
-div %>% 
-    select(id, coast, skew, soil, substrate, 
-           `Проективное покрытие, %` = vegetation, 
-           `Доминантные виды растений` = plants.d,) %>% 
-    formattable::formattable()
 ```
 
 # Обилия и соотношения таксонов
@@ -303,7 +259,7 @@ div %>%
     theme(axis.text.x = element_text(angle = 30, hjust = 0.9))
 ```
 
-# Струкруа населения
+# Струкруа населения: ординация
 
 ```{r}
 # dissimilarity -----------------------------------------------------------
@@ -422,9 +378,7 @@ PCOA2 %>%
 ```
 
 
-## Ординация
-
-### Берег
+## Берег
 
 ```{r}
 ggplot(M2, aes(x = axis1, y = axis2, color = coast)) + 
@@ -434,7 +388,7 @@ ggplot(M2, aes(x = axis1, y = axis2, color = coast)) +
     labs(x = NULL, y = NULL) 
 ```
 
-### Уклон
+## Уклон
 
 ```{r}
 ggplot(M2, aes(x = axis1, y = axis2, color = skew)) + 
@@ -444,7 +398,7 @@ ggplot(M2, aes(x = axis1, y = axis2, color = skew)) +
     labs(x = NULL, y = NULL) 
 ```
 
-### Почва
+## Почва
 
 ```{r}
 ggplot(M2, aes(x = axis1, y = axis2, color = soil)) + 
@@ -454,7 +408,7 @@ ggplot(M2, aes(x = axis1, y = axis2, color = soil)) +
     labs(x = NULL, y = NULL) 
 ```
 
-### Доминантные виды растений
+## Доминантные виды растений
 
 ```{r}
 M2 %>% 
@@ -465,14 +419,22 @@ M2 %>%
     labs(x = NULL, y = NULL, color = "Dominant plant species")
 ```
 
-## PERMANOVA
+# Струкруа населения: PERMANOVA
 
-### Oribatida, состав
++ soil - почва
++ coast - берег
++ vegetation - ПП растительности, %
++ plants.d - доминантные виды растений
+
+## Oribatida, состав
 
 ```{r}
-vegan::adonis2(dis2$or.bin ~ soil + coast + vegetation + plants.d, 
-               data = filter(labs, id %in% attr(dis2$or.bin, "Labels")),
-               permutations = 9999)
+labs %>% 
+    filter(id %in% attr(dis2$or.bin, "Labels")) %>% 
+    # mutate(vegetation = as.numeric(vegetation)) %>%
+    vegan::adonis2(
+        dis2$or.bin ~ soil + coast + vegetation + plants.d, 
+        data = ., permutations = 9999)
 # vegan::adonis2(dis2$or.bin ~ soil + coast + plants.d + vegetation , 
 #                data = filter(labs, id %in% attr(dis2$or.bin, "Labels")),
 #                permutations = 9)
@@ -489,7 +451,7 @@ vegan::adonis2(dis2$or.bin ~ soil + coast + vegetation + plants.d,
 
 Видовой соостав орибатид в пробах на 35.3 % определяется видовым составом и проективным покрытием растений (0.1632 + 0.1898 в таблице). От почвы и берега он зависит в лучшем случае на 9.4 % (а может оказаться, что и меньше)
 
-### Oribatida, структура
+## Oribatida, структура
 
 ```{r}
 vegan::adonis2(dis2$or.num ~ coast + soil + vegetation + plants.d, 
@@ -497,7 +459,7 @@ vegan::adonis2(dis2$or.num ~ coast + soil + vegetation + plants.d,
                permutations = 9999)
 ```
 
-### Mesostigmata, состав
+## Mesostigmata, состав
 
 ```{r}
 vegan::adonis2(dis2$ms.bin ~ coast + soil + vegetation + plants.d, 
@@ -505,7 +467,7 @@ vegan::adonis2(dis2$ms.bin ~ coast + soil + vegetation + plants.d,
                permutations = 9999)
 ```
 
-### Mesostigmata, структура
+## Mesostigmata, структура
 
 ```{r}
 vegan::adonis2(dis2$ms.num ~ coast + soil + vegetation + plants.d, 
@@ -513,3 +475,47 @@ vegan::adonis2(dis2$ms.num ~ coast + soil + vegetation + plants.d,
                permutations = 9999)
 ```
 
+
+# Задействованные данные{.tabset}
+
+## Обилие общее
+
+```{r}
+formattable::formattable(div[,c(1,17:20)])
+```
+
+## Разнообразие Oribatida
+
+```{r}
+div %>% 
+    select(id, 
+           `Abundance` = orb_obs_m, 
+           `Number of species` = orb_obs_qD, 
+           `Rarefied number of species` = orb_d20_qD, 
+           `Shannon index` = orb_iH) %>% 
+    mutate_at(c("Abundance", "Number of species"), function(a){a[is.na(a)] <- 0; a}) %>% 
+    formattable::formattable()
+```
+
+## Разнообразие Mesostigmata
+
+```{r}
+div %>% 
+    select(id, 
+           `Abundance` = mst_obs_m, 
+           `Number of species` = mst_obs_qD, 
+           `Rarefied number of species` = mst_d10_qD, 
+           `Shannon index` = mst_iH) %>% 
+    mutate_at(c("Abundance", "Number of species"), function(a){a[is.na(a)] <- 0; a}) %>% 
+    formattable::formattable()
+```
+
+## Параметры среды
+
+```{r}
+div %>% 
+    select(id, coast, skew, soil, substrate, 
+           `Проективное покрытие, %` = vegetation, 
+           `Доминантные виды растений` = plants.d,) %>% 
+    formattable::formattable()
+```
