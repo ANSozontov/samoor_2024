@@ -16,20 +16,14 @@ or.w <- long %>%
     filter(O == "Oribatida", sp != "Oribatida_juvenile_indet") %>% 
     select(-O, -age) %>% 
     pivot_wider(names_from = id, values_from = abu, values_fn = sum) #id or taxa???
-# or.w <- or.l %>% 
-#     pivot_wider(names_from = sp, values_from = abu)
 ms.w <- long %>% 
     filter(O == "Mesostigmata") %>% 
     select(-O, -age) %>%
     pivot_wider(names_from = id, values_from = abu, values_fn = sum)
-# ms.w <- ms.l %>% 
-#     pivot_wider(names_from = sp, values_from = abu)
 
 labs <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "samples") %>% 
     filter(distr == "Samoor") %>% 
-    transmute(id = substr(id, 3, 7), coast, skew, 
-              soil, substrate, zone,
-              vegetation = veg, plants.d) %>% 
+    transmute(id = substr(id, 3, 7), coast, plants.d) %>% 
     separate(plants.d, sep = " ", into = "plants.d", extra = "drop")
 
 # rarefication ------------------------------------------------------------
@@ -126,9 +120,11 @@ PCOA <- dis %>%
         list(eig = e, pc = p)
     }) %>% 
     purrr::transpose()
-
-
-# export ---------------------------------------------------------------
 rm(cl)
-save.image("01.03.2023.RData")
+
+# Viz me ---------------------------------------------------------------
+
+
+
+# save.image("01.03.2023.RData")
 
