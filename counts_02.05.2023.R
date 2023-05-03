@@ -1,5 +1,4 @@
 # loading -----------------------------------------------------------------
-library(parallel)
 library(tidyverse)
 theme_set(theme_bw() + theme(legend.position = "bottom"))
 
@@ -37,31 +36,33 @@ labs <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "samples")
     filter(distr == "Samoor", code != "SmSw") %>% 
     transmute(id = substr(id, 3, 7), seria = substr(id, 1, 4), plants.d, 
               coast = case_when(coast == "sandy dunes" ~ "dunes", TRUE ~ coast)) %>% 
-    separate(plants.d, sep = " ", into = "plants.d", extra = "drop")
+    separate(plants.d, sep = " ", into = "plants.d", extra = "drop") %>% 
+    arrange(id)
 # taxa <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "taxa") %>% 
 #     select(sp, area2, order)
-
-xaxis <- c(
-    "SdJj", #sandy beach
-    "SdEq", #sandy beach
-    "SdTu", #sandy beach
-    "SdEc", #sandy beach
-    "SdTa", #sandy beach
-    "SdJm", #sandy beach
-    "SdFn", #sandy beach
-    "PbAe", #pebbly     
-    "PbDe", #pebbly     
-    "PbPo", #pebbly     
-    "PbTu", #pebbly     
-    "PbTl", #pebbly     
-    "SdCJ", #dunes      
-    "SdCS", #dunes   
-    "RsFd") #reeds      
+# 
+# xaxis <- c(
+#     "SdJj", #sandy beach
+#     "SdEq", #sandy beach
+#     "SdTu", #sandy beach
+#     "SdEc", #sandy beach
+#     "SdTa", #sandy beach
+#     "SdJm", #sandy beach
+#     "SdFn", #sandy beach
+#     "PbAe", #pebbly     
+#     "PbDe", #pebbly     
+#     "PbPo", #pebbly     
+#     "PbTu", #pebbly     
+#     "PbTl", #pebbly     
+#     "SdCJ", #dunes      
+#     "SdCS", #dunes   
+#     "RsFd") #reeds      
 
 # rarefication ------------------------------------------------------------
+library(parallel)
 cl <- makeCluster(detectCores()-1)
 # Oribatida - d20
-rar <- or.w %>% 
+rar <- orwi %>% 
     select(-sp) %>% 
     lapply(function(a)a <- a[a>0]) %>% 
     keep(~length(.x)>0) %>% # >0 !!!
@@ -80,7 +81,7 @@ rar <- or.w %>%
     map_df(rbind, .id = "id") %>% 
     left_join(labs, ., by = "id")
 # Mesostigmata d10
-rar <- ms.w %>% 
+rar <- mswi %>% 
     select(-sp) %>% 
     lapply(function(a)a <- a[a>0]) %>% 
     keep(~length(.x)>0) %>% # >0 !!!
@@ -97,35 +98,81 @@ rar <- ms.w %>%
             dplyr::mutate(mst_iH = vegan::diversity(a))
     }) %>% 
     map_df(rbind, .id = "id") %>% 
-    left_join(rar, ., by = "id")
-# general
-div <- long %>% 
-    filter(O == "total", 
-           !(sp %in% c("Oribatida_adult", 
-                       "Oribatida_juvenile_det", 
-                       "Oribatida_juvenile_indet"))) %>% 
-    pivot_wider(names_from = sp, values_from = abu) %>% 
-    select(-O, -age) %>% 
     left_join(rar, ., by = "id") %>% 
-    mutate(seria = substr(id, 1, 4), .before = 2) 
+    mutate_at(c("orb_obs_m", "orb_obs_qD", "mst_obs_m", "mst_obs_qD"), 
+              function(a){a[is.na(a)] <- 0; a})
+
+# comparison --------------------------------------------------------------
+rar %>% 
+    select(coast:mst_iH) %>% 
+    pivot_longer(names_to = "v1", values_to = "vr", -1) %>% 
+    filter(!is.na(vr)) %>% 
+    separate(v1, into = c("taxa", "diversity"), sep = "_", extra = "merge") %>% 
+    mutate(
+        diversity2 = case_when(
+            diversity == "obs_m"  ~"1. Abundance", 
+            diversity == "obs_qD" ~ "2. Observed N of sp.",
+            diversity == "iH"     ~ "4. Shannon index", 
+            TRUE ~ "3. Rarefied N of sp."), 
+        taxa = case_when(
+            taxa == "orb" ~ "Oribatida", 
+            TRUE ~ "Mesostigmata")) %>% 
+    ggplot(aes(x = coast, y = vr, fill = taxa)) + 
+    geom_boxplot() + 
+    facet_wrap(~diversity2, scales = "free") +
+    labs(subtitle = "Oribatida rarefied to 20, Mesostigmata to 10 individuals", 
+         y = NULL, x = NULL, fill = "")
+
+#oribatida
+fit_or.plant <- lm(orb_obs_m ~ plants.d, data = rar) 
+fit_or.coast <- lm(orb_obs_m ~ coast, data = rar) 
+
+ggplot() + 
+    geom_density(aes(x = residuals(fit_or.coast)), color = "blue") +
+    geom_density(aes(x = residuals(fit_or.plant)), color = "green") 
+shapiro.test(residuals(fit_or.coast))
+shapiro.test(residuals(fit_or.plant))
+AIC(fit_or.coast)
+AIC(fit_or.plant)
+summary(fit_or.coast)
+summary(fit_or.plant)
+
+# mesostigmata
+fit_ms.plant <- glm(mst_obs_m ~ plants.d, data = rar, family = binomial(link = "logit")) 
+fit_ms.coast <- glm(mst_obs_m ~ coast, data = rar, family = binomial(link = "logit")) 
+fit <- lme4::lmer(mst_obs_m ~ coast + (1|seria), data = rar) 
+
+ggplot() + 
+    geom_density(aes(x = residuals(fit_ms.coast)), color = "blue") +
+    geom_density(aes(x = residuals(fit_ms.plant)), color = "green") 
+shapiro.test(residuals(fit_ms.coast))
+shapiro.test(residuals(fit_ms.plant))
+AIC(fit_ms.coast)
+AIC(fit_ms.plant)
+summary(fit_ms.coast)
+summary(fit_ms.plant)
+
+
+
 
 # multivariate ------------------------------------------------------------
 dis <- list()
 # dissimilarity
 
-dis <- list(orws, orws, msws,  msws, rbind(orws, msws), rbind(orws, msws)) %>% 
+dis <- list(orws, orws, msws,  msws #, rbind(orws, msws), rbind(orws, msws)
+            ) %>% 
     map(~.x %>% 
             column_to_rownames("sp") %>% 
             select_if(function(a){sum(a)>0}) %>% 
             t %>% 
             as.data.frame)
-names(dis) <- c("or.bin", "or.num", "ms.bin", "ms.num", "all.bin", "all.num")
+names(dis) <- c("or.bin", "or.num", "ms.bin", "ms.num") #, "all.bin", "all.num")
 dis$or.bin <- vegan::vegdist(dis$or.bin, method = "jaccard", binary = TRUE)
 dis$or.num <- vegan::vegdist(dis$or.num, method = "bray", binary = FALSE)
 dis$ms.bin <- vegan::vegdist(dis$ms.bin, method = "jaccard", binary = TRUE)
 dis$ms.num <- vegan::vegdist(dis$ms.num, method = "bray", binary = FALSE)
-dis$all.bin<- vegan::vegdist(dis$all.bin, method = "jaccard", binary = TRUE)
-dis$all.num<- vegan::vegdist(dis$all.num, method = "bray", binary = FALSE)
+# dis$all.bin<- vegan::vegdist(dis$all.bin, method = "jaccard", binary = TRUE)
+# dis$all.num<- vegan::vegdist(dis$all.num, method = "bray", binary = FALSE)
 
 # pcoa
 PCOA <- dis %>% 
@@ -183,38 +230,43 @@ ggplot() +
               data = eig, size = 3)+
     geom_text(aes(x = -0.4, y = 0, label = axis2), 
               data = eig, size = 3, angle = 90)+
-    facet_grid(cols = vars(type), rows = vars(taxa))
+    facet_grid(cols = vars(type), rows = vars(taxa)) +
+    theme(panel.grid = element_blank())
 
 # indval ------------------------------------------------------------------
 library(indicspecies)
-data(wetland)
-groups = c(rep(1, 17), rep(2, 14), rep(3,10))
-indval = multipatt(wetland, groups, 
-                   control = how(nperm=999)) 
-# iv <- 
-orws %>% 
+
+set.seed(2)
+iv <- orws %>% 
+    rbind(msws) %>%
     mutate(total = apply(.[,-1], 1, sum), .before = 2) %>% 
     filter(total >= 5) %>% 
     select(-total) %>% 
     column_to_rownames("sp") %>% 
-    t %>% 
+    t %>%
     indicspecies::multipatt(
         pull(arrange(distinct(select(labs, seria, coast)), seria) , coast), 
-        # func = "indval.r", 
+        control = how(nperm=999),
+        max.order = 4,
         func = "indval",
-        duleg = F
-    ) %>% 
-    pluck("sign") %>% 
-    filter(p.value <= 0.05)
-filter(iv$sign, p.value <= 0.05)
+        duleg = FALSE
+    )
 summary(iv)
-iv$sign
-
-
-
-
-
-
+iv <- iv$str %>% 
+    as.data.frame() %>% 
+    rownames_to_column("sp") %>% 
+    as_tibble() %>% 
+    pivot_longer(names_to = "biotop", values_to = "iv", -sp) %>% 
+    group_by(sp) %>% 
+    filter(iv == max(iv)) %>% 
+    ungroup() %>% 
+    left_join(select(rownames_to_column(iv$sign, "sp"), sp, p.value), 
+              by = "sp") %>% 
+    mutate(`iv, %` = round(iv*100), 
+           p.value = round(p.value, 4),
+           sign = case_when(p.value <= 0.05 ~ "*", TRUE ~ NA), 
+           .keep = "unused", 
+           .after = 2)
 
 
 
