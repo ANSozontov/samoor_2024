@@ -3,6 +3,13 @@ library(tidyverse)
 theme_set(theme_bw() + theme(legend.position = "bottom"))
 library(parallel)
 cl <- makeCluster(detectCores()-1)
+library(indicspecies)
+
+version
+cat("The package's used versions\n"); a %>% 
+    pluck("otherPkgs") %>% 
+    map_dfr(~tibble(Package = .x$Package, Version = .x$Version)) %>% 
+    arrange(Package)
 
 long <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "main") %>% 
     select(O:SmSdTu5) %>% 
@@ -13,14 +20,26 @@ long <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "main") %>
     mutate(id = substr(id, 3, 7)) %>%  # seria = substr(id, 1, 4)) %>%  #id = str_replace_all(id, "_", "")) %>% 
     filter(!is.na(abu)) %>% # seria != "Sw__") %>% 
     arrange(id)
-or.w <- long %>% 
+
+orwi <- long %>% 
     filter(O == "Oribatida", sp != "Oribatida_juvenile_indet") %>% 
     select(-O, -age) %>% 
-    pivot_wider(names_from = id, values_from = abu, values_fn = sum, values_fill = 0) #id or taxa???
-ms.w <- long %>% 
+    pivot_wider(names_from = id, values_from = abu, values_fn = sum, values_fill = 0)
+orws <- long %>% 
+    filter(O == "Oribatida", sp != "Oribatida_juvenile_indet") %>% 
+    mutate(seria = substr(id, 1, 4)) %>% 
+    select(-O, -id, -age) %>% 
+    pivot_wider(names_from = seria, values_from = abu, values_fn = sum, values_fill = 0)
+mswi <- long %>% 
     filter(O == "Mesostigmata") %>% 
     select(-O, -age) %>%
     pivot_wider(names_from = id, values_from = abu, values_fn = sum, values_fill = 0)
+msws <- long %>% 
+    filter(O == "Mesostigmata") %>% 
+    mutate(seria = substr(id, 1, 4)) %>% 
+    select(-O, -id, -age) %>%
+    pivot_wider(names_from = seria, values_from = abu, values_fn = sum, values_fill = 0)
+
 
 labs <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "samples") %>% 
     filter(distr == "Samoor", code != "SmSw") %>% 
@@ -87,84 +106,72 @@ ggsave("plot_4.pdf", plot = p4, width = 297/25, height = 210/25)
 ## НИПОНЕЛ, обсудить
 
 # Рис. 5. Куммуляты по типам берега (АС). ---------------------------------
-
-# rar <- 
-long %>% 
+s <- Sys.time()
+rar.or.c <- long %>% 
     filter(O == "Oribatida") %>% 
     left_join(labs, by = "id") %>% 
-    group_by(coast, sp) %>% 
-    summarise(abu = mean(abu), .groups = "drop") %>% 
-    filter(abu > 0) %>% 
-    pivot_wider(names_from = coast, values_from = abu, values_fill = 0) %>% 
+    select(coast, abu, sp) %>% 
+    pivot_wider(names_from = coast, values_from = abu, values_fill = 0, values_fn = sum) %>% 
     select(-sp) %>% 
-    lapply(function(a)a <- a[a>0]) %>% 
-    keep(~length(.x)>0) %>% # >0 !!!
+    lapply(function(a){sort(a[a>0], decreasing = TRUE)}) %>% 
     parLapply(cl = cl, ., function(a){
-        a |> 
-            iNEXT::iNEXT(size = seq(0, 100, by = 5), nboot = 0) |>
-            purrr::pluck("iNextEst", "size_based") |> 
-            dplyr::select(m, Method, qD) |> 
-            dplyr::filter(m %in% seq(0, 100, by = 5) | Method == "Observed") |> 
-            dplyr::mutate(taxa = "Oribatida")
-    }) 
-    map_df(rbind, .id = "id") %>% 
-    as_tibble() %>% 
-    left_join(labs, by = "id")
+        a |>
+            iNEXT::iNEXT( 
+                      q=0, 
+                      datatype="abundance", 
+                      se = TRUE,
+                      size = seq(0, 2000, by = 5))
+    }) %>%
+    map_dfr(~.x %>% 
+                pluck("iNextEst", "size_based") %>% 
+                select(m, Method, qD, qD.LCL, qD.UCL), 
+            .id = "coast") %>% 
+    mutate(taxa = "Oribatida")
+Sys.time() - s
 
+s <- Sys.time()
+rar.ms.c <- long %>% 
+    filter(O == "Mesostigmata") %>% 
+    left_join(labs, by = "id") %>% 
+    select(coast, abu, sp) %>% 
+    pivot_wider(names_from = coast, values_from = abu, values_fill = 0, values_fn = sum) %>% 
+    select(-sp) %>% 
+    lapply(function(a){sort(a[a>0], decreasing = TRUE)}) %>% 
+    parLapply(cl = cl, ., function(a){
+        a |>
+            iNEXT::iNEXT( 
+                q=0, 
+                datatype="abundance", 
+                se = TRUE,
+                size = seq(0, 800, by = 5))
+    }) %>%
+    map_dfr(~.x %>% 
+                pluck("iNextEst", "size_based") %>% 
+                select(m, Method, qD, qD.LCL, qD.UCL), 
+            .id = "coast") %>% 
+    mutate(taxa = "Mesostigmata")
+Sys.time() - s
 
-# Oribatida - d20
-# rar <- 
-or.w %>% 
-    select(-sp) %>% 
-    lapply(function(a)a <- a[a>0]) %>% 
-    keep(~length(.x)>0) %>% # >0 !!!
-    parLapply(cl = cl, ., function(a){
-        a |> 
-            iNEXT::iNEXT(size = seq(0, 50, by = 2), nboot = 0) |>
-            purrr::pluck("iNextEst", "size_based") |> 
-            dplyr::select(m, Method, qD) |> 
-            dplyr::filter(m %in% seq(0, 50, by = 2) | Method == "Observed") |> 
-            dplyr::mutate(taxa = "Oribatida")
-            # tidyr::pivot_longer(names_to = "mm", values_to = "vv", -Method) |>
-            # dplyr::filter(mm == "qD" | Method == "Observed") |> 
-            # dplyr::mutate(Method = dplyr::case_when(Method == "Observed" ~ "orb_obs", TRUE ~ "orb_d20")) |> 
-            # tidyr::pivot_wider(names_from = c("Method", "mm"), values_from = vv) #|> 
-            #dplyr::mutate(orb_iH = vegan::diversity(a))
-    }) %>% 
-    map_df(rbind, .id = "id") %>% 
-    as_tibble() %>% 
-    left_join(labs, by = "id")
-# Mesostigmata d10
-rar <- ms.w %>% 
-    select(-sp) %>% 
-    lapply(function(a)a <- a[a>0]) %>% 
-    keep(~length(.x)>0) %>% # >0 !!!
-    parLapply(cl = cl, ., function(a){
-        a |> 
-            iNEXT::iNEXT(size = seq(0, 25, by = 1), nboot = 0) |>
-            purrr::pluck("iNextEst", "size_based") |> 
-            dplyr::select(m, Method, qD) |> 
-            dplyr::filter(m %in% seq(0, 25, by = 1) | Method == "Observed") |> 
-            dplyr::mutate(taxa = "Mesostigmata")
-            # tidyr::pivot_longer(names_to = "mm", values_to = "vv", -Method) |>
-            # dplyr::filter(mm == "qD" | Method == "Observed") |> 
-            # dplyr::mutate(Method = dplyr::case_when(Method == "Observed" ~ "mst_obs", TRUE ~ "mst_d10")) |> 
-            # tidyr::pivot_wider(names_from = c("Method", "mm"), values_from = vv) |> 
-            # dplyr::mutate(mst_iH = vegan::diversity(a))
-    }) %>% 
-    map_df(rbind, .id = "id") %>% 
-    as_tibble()
-    left_join(rar, ., by = "id")
-# general
-div <- long %>% 
-    filter(O == "total", 
-           !(sp %in% c("Oribatida_adult", 
-                       "Oribatida_juvenile_det", 
-                       "Oribatida_juvenile_indet"))) %>% 
-    pivot_wider(names_from = sp, values_from = abu) %>% 
-    select(-O, -age) %>% 
-    left_join(rar, ., by = "id") %>% 
-    mutate(seria = substr(id, 1, 4), .before = 2) 
+rar <- rbind(rar.ms.c, rar.or.c) %>% as_tibble()
+
+p5o <- rar %>% 
+    ggplot(aes(x = m, y = qD, group = coast, fill = coast, color = coast)) + 
+    labs(x = "individuals", y = "Number of species") + 
+    facet_wrap(~taxa, scales = "free")
+p5b <- p5o + 
+    geom_ribbon(aes(ymin = qD.LCL, ymax = qD.UCL), alpha = 0.3, color = "transparent")
+p5o <- p5o +
+    geom_line(data = filter(rar, Method != "Extrapolation")) +
+    geom_line(data = filter(rar, Method == "Extrapolation"), linetype = "dashed") + 
+    geom_point(data = filter(rar, Method == "Observed"), 
+               shape = 15, size = 2)
+
+p5b + 
+    geom_line(data = filter(rar, Method != "Extrapolation")) +
+    geom_line(data = filter(rar, Method == "Extrapolation"), linetype = "dashed") + 
+    geom_point(data = filter(rar, Method == "Observed"), 
+               shape = 15, size = 2)
+p5o
 
 
 # Рис. 6. Кладограмма по фаунистическим спискам отдельных мероцено --------
@@ -259,11 +266,96 @@ ggsave("plot_8.pdf", p4, height = 210/40, width = 297/40)
 
 # Табл. 5. Виды-специалисты (индикаторы) ----------------------------------
 
+set.seed(2)
+iv.s <- orws %>% 
+    rbind(msws) %>%
+    mutate(total = apply(.[,-1], 1, sum), .before = 2) %>% 
+    filter(total >= 5) %>% 
+    select(-total) %>% 
+    column_to_rownames("sp") %>% 
+    t %>%
+    indicspecies::multipatt(
+        pull(arrange(distinct(select(labs, seria, coast)), seria) , coast), 
+        control = how(nperm=999),
+        max.order = 4,
+        func = "indval",
+        duleg = FALSE
+    )
+# summary(iv.s)
+iv.s <- iv.s$str %>% 
+    as.data.frame() %>% 
+    rownames_to_column("sp") %>% 
+    as_tibble() %>% 
+    pivot_longer(names_to = "biotop", values_to = "iv", -sp) %>% 
+    group_by(sp) %>% 
+    filter(iv == max(iv)) %>% 
+    ungroup() %>% 
+    left_join(select(rownames_to_column(iv.s$sign, "sp"), sp, p.value), 
+              by = "sp") %>% 
+    mutate(`iv, %_s` = round(iv*100), 
+           p.value_s = round(p.value, 4),
+           sign_s = case_when(p.value <= 0.001 ~ "***", 
+                              p.value <= 0.01 ~ "**", 
+                              p.value <= 0.05 ~ "*", 
+                              TRUE ~ ""), 
+           .keep = "unused", 
+           .after = 2) %>% 
+    left_join(select(taxa, sp, order), by = "sp") %>% 
+    select(order, sp:sign_s)
 
+set.seed(3)
+iv.i <- orwi %>% 
+    rbind(mswi) %>%
+    mutate(total = apply(.[,-1], 1, sum), .before = 2) %>% 
+    filter(total >= 5) %>% 
+    select(-total) %>% 
+    column_to_rownames("sp") %>% 
+    t %>%
+    indicspecies::multipatt(
+        pull(arrange(distinct(select(labs, id, coast)), id) , coast), 
+        control = how(nperm=999),
+        max.order = 4,
+        func = "indval",
+        duleg = FALSE
+    )
+iv.i <- iv.i$str %>% 
+    as.data.frame() %>% 
+    rownames_to_column("sp") %>% 
+    as_tibble() %>% 
+    pivot_longer(names_to = "biotop", values_to = "iv", -sp) %>% 
+    group_by(sp) %>% 
+    filter(iv == max(iv)) %>% 
+    ungroup() %>% 
+    left_join(select(rownames_to_column(iv.i$sign, "sp"), sp, p.value), 
+              by = "sp") %>% 
+    mutate(`iv, %_i` = round(iv*100), 
+           p.value_i = round(p.value, 4),
+           sign_i = case_when(p.value <= 0.001 ~ "***", 
+                              p.value <= 0.01 ~ "**", 
+                              p.value <= 0.05 ~ "*", 
+                              TRUE ~ ""), 
+           .keep = "unused", 
+           .after = 2) %>% 
+    left_join(select(taxa, sp, order), by = "sp") %>% 
+    select(order, sp:sign_i)
+
+full_join(iv.s, iv.i, by = c("order", "sp", "biotop")) %>% 
+    DT::datatable(., 
+                  filter = 'top', 
+                  extensions = c('FixedColumns',"FixedHeader"),
+                  options = list(scrollX = TRUE, 
+                                 paging=FALSE,
+                                 fixedHeader=TRUE)) %>% 
+    DT::formatStyle(
+        'sp', fontStyle = list(fontStyle = 'italic')
+    
+    
 # Рис. 9. ССА распределения видов -----------------------------------------
 # Факторы: тип берега (? 1-4), 
 # тип растительности (рогозы, злаки, ситники, хвощ, лох, тростники), 
 # расстояние до моря (м), RH%, C%  
+
+
 
 
 # Рис. 10. Ординация мероценозов Mesostigmata и Oribatida  ----------------
@@ -337,7 +429,7 @@ eig <- PCOA %>%
                             TRUE ~ "Numeric data (Bray-Curtis)"))
 
 
-p3a <- ggplot(M2, aes(x = axis1, y = axis2, color = plants.d)) + 
+p10a <- ggplot(M2, aes(x = axis1, y = axis2, color = plants.d)) + 
     geom_point() + 
     stat_ellipse() +
     geom_text(aes(label = axis1, x = 0, y = -0.77), color = "black", data = eig, alpha = 0.68) +
@@ -346,7 +438,7 @@ p3a <- ggplot(M2, aes(x = axis1, y = axis2, color = plants.d)) +
     labs(x = NULL, y = NULL, color = NULL, #subtitle = "Б. Доминантные виды растений") + 
          subtitle = "A. Dominant plant species") + 
     theme(legend.text = element_text(face = "italic"))
-p3b <- ggplot(M2, aes(x = axis1, y = axis2, color = coast)) + 
+p10b <- ggplot(M2, aes(x = axis1, y = axis2, color = coast)) + 
     geom_point() + 
     stat_ellipse() +
     geom_text(aes(label = axis1, x = 0, y = -0.63), color = "black", data = eig, alpha = 0.68) +
@@ -355,8 +447,8 @@ p3b <- ggplot(M2, aes(x = axis1, y = axis2, color = coast)) +
     facet_grid(cols = vars(type), rows = vars(taxa)) + 
     labs(x = NULL, y = NULL, color  = NULL, #subtitle = "A. Тип берега")
          subtitle = "B. Coast type") 
-p3 <- gridExtra::grid.arrange(p3a, p3b, ncol = 1) #, left = "Суммарное обилие в серии, экз.")
-ggsave("plot_3.pdf", p3, width = 210/25, height = 297/25)
+p10 <- gridExtra::grid.arrange(p10a, p10b, ncol = 1) #, left = "Суммарное обилие в серии, экз.")
+ggsave("plot_10.pdf", p10, width = 210/25, height = 297/25)
 
 
 
