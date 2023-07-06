@@ -1,6 +1,7 @@
 # loading -----------------------------------------------------------------
 library(indicspecies)
 library(tidyverse)
+library(dendextend)
 library(parallel)
 cl <- makeCluster(detectCores()-1)
 theme_set(theme_bw() + theme(legend.position = "bottom"))
@@ -51,9 +52,9 @@ labs <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "samples")
               RH) %>% 
     separate(plants.d, sep = " ", into = "plants.d", extra = "drop")
 taxa <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "taxa") %>% 
-    select(sp, area2, order)
+    select(sp, area2, order, family)
 
-# Рис. 4. Обилие микроартропод по типам берега и парцеллам  ---------------
+# + Рис. 4. Обилие микроартропод по типам берега и парцеллам  ---------------
 abundance <- long %>% 
     filter(O == "total", 
            !(sp %in% c("Oribatida_adult", 
@@ -104,7 +105,7 @@ p4 <- gridExtra::grid.arrange(p4a, p4b, ncol = 1,
                               left = "Total abundance, individuals")
 ggsave("plot_4.pdf", plot = p4, width = 297/25, height = 210/25)   
 
-# Табл. 2. Корреляция обилия групп друг с другом и RH%, C%. ---------------
+# + Табл. 2. Корреляция обилия групп друг с другом и RH%, C%. ---------------
 # By samples 
 cor.data1 <- long %>% 
     filter(sp %in% c("Astigmata_total", "Collembola", "Mesostigmata_total", "Oribatida_total", "Prostigmata")) %>% 
@@ -146,10 +147,17 @@ paste("ρ=", round(cor.val1, 2), "; p=", round(cor.pval1, 2), sep = "") %>%
     as.data.frame() %>% 
     rownames_to_column("taxa") 
 
-# Табл. 3. Таксономический состав панцирных и мезостигматических к --------
-## НИПОНЕЛ, обсудить
+# + Табл. 3. Таксономический состав панцирных и мезостигматических к --------
+long %>% 
+    left_join(labs, by = "id") %>% 
+    group_by(coast, sp) %>% 
+    summarise(abu = sum(abu), .groups = "drop") %>% 
+    pivot_wider(names_from = coast, values_from = abu, values_fill = 0) %>% 
+    left_join(taxa, by = "sp") %>% 
+    select(order, family, species = sp, range = area2, `sandy beach`, pebbly, dunes, reeds)
 
-# Рис. 5. Куммуляты по типам берега (АС). ---------------------------------
+
+# + Рис. 5. Куммуляты по типам берега (АС). ---------------------------------
 s <- Sys.time()
 rar.or.c <- long %>% 
     filter(O == "Oribatida") %>% 
@@ -161,10 +169,10 @@ rar.or.c <- long %>%
     parLapply(cl = cl, ., function(a){
         a |>
             iNEXT::iNEXT( 
-                      q=0, 
-                      datatype="abundance", 
-                      se = TRUE,
-                      size = seq(0, 2000, by = 5))
+                q=0, 
+                datatype="abundance", 
+                se = TRUE,
+                size = seq(0, 2000, by = 5))
     }) %>%
     map_dfr(~.x %>% 
                 pluck("iNextEst", "size_based") %>% 
@@ -217,31 +225,84 @@ p5b +
                shape = 15, size = 2)
 p5o
 
+# + Рис. 6. Кладограмма по фаунистическим спискам отдельных мероценозов --------
+dis <- list()
+# dissimilarity
+dis$or.bin <- orwi %>% 
+    column_to_rownames("sp") %>% 
+    select_if(function(a){sum(a)>0}) %>% 
+    t %>% 
+    as.data.frame() %>% 
+    vegan::vegdist(method = "jaccard", binary = TRUE)
+dis$or.num <- orwi %>% 
+    column_to_rownames("sp") %>% 
+    select_if(function(a){sum(a)>0}) %>% 
+    t %>% 
+    as.data.frame() %>% 
+    vegan::vegdist(method = "bray", binary = FALSE)
+dis$ms.bin <- mswi %>% 
+    column_to_rownames("sp") %>% 
+    select_if(function(a){sum(a)>0}) %>% 
+    t %>% 
+    as.data.frame() %>% 
+    vegan::vegdist(method = "jaccard", binary = TRUE)
+dis$ms.num <- mswi %>% 
+    column_to_rownames("sp") %>% 
+    select_if(function(a){sum(a)>0}) %>% 
+    t %>% 
+    as.data.frame() %>% 
+    vegan::vegdist(method = "bray", binary = FALSE)
 
-# Рис. 6. Кладограмма по фаунистическим спискам отдельных мероцено --------
+# https://cran.r-project.org/web/packages/dendextend/vignettes/dendextend.html
 
+dend <- lapply(dis, function(a){ 
+    dend <- a %>% 
+        hclust(method = 'ward.D2') %>% ### METHOD
+        as.dendrogram()
+    L <- labels(dend) %>% 
+        tibble(id = .) %>% 
+        left_join(labs, by = "id") %>% 
+        mutate(l = factor(coast), 
+               l = as.numeric(l)) 
+    dend %>% 
+        set("labels_col", L$l) %>% 
+        set("labels_cex", 0.5)
+    })
 
-# Рис. 7. Видовое богатство по сериям  ------------------------------------
+par(mfrow = c(2,2))
+plot(dend[[1]],
+    horiz = TRUE, 
+    main = "Order = Oribatida\n Data = binary (Jaccard)\n Method = Ward")
+plot(dend[[2]],
+     horiz = TRUE, 
+     main = "Order = Oribatida\n Data = numeric (Bray-Curtis)\n Method = Ward")
+plot(dend[[3]],
+     horiz = TRUE, 
+     main = "Order = Mesostigmata\n Data = binary (Jaccard)\n Method = Ward")
+plot(dend[[4]],
+     horiz = TRUE, 
+     main = "Order = Mesostigmata\n Data = numeric (Bray-Curtis)\n Method = Ward")
+par(mfrow = c(1,1))
 
-div <- or.w %>% 
+# + Рис. 7. Видовое богатство по сериям  ------------------------------------
+# в среднем в пробе этой серии
+div <- orwi %>% 
     select(-sp) %>% 
     as.list() %>% 
     lapply(function(a){data.frame(Oribatida = length(a[a>0]))}) %>% 
     map_df(rbind, .id = "id")
-div <- ms.w %>% 
+div <- mswi %>% 
     select(-sp) %>% 
     as.list() %>% 
     lapply(function(a){data.frame(Mesostigmata = length(a[a>0]))}) %>% 
     map_df(rbind, .id = "id") %>% 
     left_join(div, by = "id") %>% 
-    left_join(labs, ., by = "id") %>% 
+    inner_join(select(labs, -RH), by = "id") %>% 
     as_tibble()
 
 p7 <- div %>% 
-    # select(id, seria, coast, plants.d, Oribatida = orb_obs_qD, Mesostigmata = mst_obs_qD) %>% 
-    # mutate_if(is.numeric, function(a){a[is.na(a)] <- 0; a}) %>% 
-    # mutate(seria = substr(id, 1, 4), .before = 2) %>% 
-    pivot_longer(names_to = "taxa", values_to = "nsp", -c(1:4)) %>% 
+    select(-id) %>% 
+    pivot_longer(names_to = "taxa", values_to = "nsp", -c("seria", "coast", "plants.d")) %>% 
     group_by(seria, taxa) %>% 
     summarise(
         coast = paste0(unique(coast), collapse = " / "), 
@@ -253,7 +314,7 @@ p7 <- div %>%
            ymin = nsp_mean - nsp_sd, 
            ymin = case_when(ymin <= 0 ~ 0, TRUE ~ ymin)) %>% 
     ggplot(aes(x = seria, y = nsp_mean, 
-               fill = taxa, #color = taxa,
+               fill = taxa, 
                ymin = ymin, ymax = ymax)) + 
     geom_col(position = "dodge", width = 0.68) + 
     geom_errorbar(position = "dodge", color = "black", alpha = 0.5) + 
@@ -264,13 +325,12 @@ p7 <- div %>%
     theme(axis.text.x = element_text(angle = 90)) +
     labs(x = NULL, fill = NULL, #y = "Среднее количество видов в серии ± SD")
          y = "Average number of species in seria ± SD")
-ggsave("plot_7.pdf", p2, width = 297/25, height = 210/25)
+ggsave("plot_7.pdf", p7, width = 297/25, height = 210/25)
 
-# Рис. 8. Ареалогический состав по сериям: качественный и количест --------
-
-p8 <- rbind(mutate(ms.w, Order = "Mesostigmata", .before = 1), 
-            mutate(or.w, Order = "Oribatida", .before = 1), 
-            mutate(rbind(ms.w, or.w), .before = 1,
+# + Рис. 8. Ареалогический состав по сериям: качественный и количест --------
+p8 <- rbind(mutate(mswi, Order = "Mesostigmata", .before = 1), 
+            mutate(orwi, Order = "Oribatida", .before = 1), 
+            mutate(rbind(mswi, orwi), .before = 1,
                    Order = "Oribatida & Mesostigmata")) %>% 
     pivot_longer(names_to = "id", values_to = "abu", -Order:-sp) %>% 
     left_join(taxa, by = "sp") %>% 
@@ -308,7 +368,7 @@ p8 <- rbind(mutate(ms.w, Order = "Mesostigmata", .before = 1),
 p8
 ggsave("plot_8.pdf", p4, height = 210/40, width = 297/40)
 
-# Табл. 5. Виды-специалисты (индикаторы) ----------------------------------
+# + Табл. 5. Виды-специалисты (индикаторы) ----------------------------------
 
 set.seed(2)
 iv.s <- orws %>% 
@@ -391,7 +451,7 @@ full_join(iv.s, iv.i, by = c("order", "sp", "biotop")) %>%
                                  paging=FALSE,
                                  fixedHeader=TRUE)) %>% 
     DT::formatStyle(
-        'sp', fontStyle = list(fontStyle = 'italic')
+        'sp', fontStyle = list(fontStyle = 'italic'))
     
     
 # Рис. 9. ССА распределения видов -----------------------------------------
@@ -399,36 +459,14 @@ full_join(iv.s, iv.i, by = c("order", "sp", "biotop")) %>%
 # тип растительности (рогозы, злаки, ситники, хвощ, лох, тростники), 
 # расстояние до моря (м), RH%, C%  
 
+"https://uw.pressbooks.pub/appliedmultivariatestatistics/chapter/ca-dca-and-cca/"
+"https://gist.github.com/perrygeo/7572735"
+"https://pmassicotte.github.io/stats-denmark-2019/07_rda.html#/redundancy-analysis"
 
+library(vegan)
+library(labdsv)
 
-
-# Рис. 10. Ординация мероценозов Mesostigmata и Oribatida  ----------------
-dis <- list()
-# dissimilarity
-dis$or.bin <- or.w %>% 
-    column_to_rownames("sp") %>% 
-    select_if(function(a){sum(a)>0}) %>% 
-    t %>% 
-    as.data.frame() %>% 
-    vegan::vegdist(method = "jaccard", binary = TRUE)
-dis$or.num <- or.w %>% 
-    column_to_rownames("sp") %>% 
-    select_if(function(a){sum(a)>0}) %>% 
-    t %>% 
-    as.data.frame() %>% 
-    vegan::vegdist(method = "bray", binary = FALSE)
-dis$ms.bin <- ms.w %>% 
-    column_to_rownames("sp") %>% 
-    select_if(function(a){sum(a)>0}) %>% 
-    t %>% 
-    as.data.frame() %>% 
-    vegan::vegdist(method = "jaccard", binary = TRUE)
-dis$ms.num <- ms.w %>% 
-    column_to_rownames("sp") %>% 
-    select_if(function(a){sum(a)>0}) %>% 
-    t %>% 
-    as.data.frame() %>% 
-    vegan::vegdist(method = "bray", binary = FALSE)
+# + Рис. 10. Ординация мероценозов Mesostigmata и Oribatida  ----------------
 
 # pcoa
 PCOA <- dis %>% 
