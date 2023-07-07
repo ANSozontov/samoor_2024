@@ -54,6 +54,8 @@ labs <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "samples")
 taxa <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "taxa") %>% 
     select(sp, area2, order, family)
 
+export.tables <- list()
+
 # + Рис. 4. Обилие микроартропод по типам берега и парцеллам  ---------------
 abundance <- long %>% 
     filter(O == "total", 
@@ -103,7 +105,7 @@ p4b <- abundance %>%
     theme(axis.text.x = element_blank())
 p4 <- gridExtra::grid.arrange(p4a, p4b, ncol = 1, 
                               left = "Total abundance, individuals")
-ggsave("plot_4.pdf", plot = p4, width = 297/25, height = 210/25)   
+ggsave("Fig 4. General abundances.pdf", plot = p4, width = 297/25, height = 210/25)   
 
 # + Табл. 2. Корреляция обилия групп друг с другом и RH%, C%. ---------------
 # By samples 
@@ -131,6 +133,7 @@ cor.pval1 <- expand_grid(v1 = 2:ncol(cor.data1), v2 = 2:ncol(cor.data1)) %>%
     column_to_rownames("v1") %>% 
     as.matrix()
 
+pdf("Fig-tab 2. Correlation.pdf", width = 6, height = 6)
 corrplot::corrplot(
     corr = cor.val1, 
     p.mat = cor.pval1, 
@@ -139,23 +142,26 @@ corrplot::corrplot(
     diag = FALSE,
     col =  corrplot::COL2('RdYlBu', 10)[10:1], 
     sig.level = 0.05)
+dev.off() 
 
-paste("ρ=", round(cor.val1, 2), "; p=", round(cor.pval1, 2), sep = "") %>% 
+export.tables$tab.2_correlation <- paste(
+        "ρ=", round(cor.val1, 2), "; p=", round(cor.pval1, 2), sep = "") %>% 
     matrix(ncol = 6, byrow = TRUE) %>% 
     `colnames<-`(colnames(cor.val1)) %>% 
     `rownames<-`(rownames(cor.val1)) %>% 
     as.data.frame() %>% 
     rownames_to_column("taxa") 
+export.tables$tab.2_correlation
 
 # + Табл. 3. Таксономический состав панцирных и мезостигматических к --------
-long %>% 
+export.tables$tab.3_all_species <- long %>% 
     left_join(labs, by = "id") %>% 
     group_by(coast, sp) %>% 
     summarise(abu = sum(abu), .groups = "drop") %>% 
     pivot_wider(names_from = coast, values_from = abu, values_fill = 0) %>% 
     left_join(taxa, by = "sp") %>% 
-    select(order, family, species = sp, range = area2, `sandy beach`, pebbly, dunes, reeds)
-
+    select(order, family, species = sp, range = area2, `sandy beach`, pebbly, dunes, reeds) 
+export.tables$tab.3_all_species
 
 # + Рис. 5. Куммуляты по типам берега (АС). ---------------------------------
 s <- Sys.time()
@@ -206,24 +212,31 @@ Sys.time() - s
 
 rar <- rbind(rar.ms.c, rar.or.c) %>% as_tibble()
 
-p5o <- rar %>% 
+p5o <- rar %>% # основа
     ggplot(aes(x = m, y = qD, group = coast, fill = coast, color = coast)) + 
     labs(x = "individuals", y = "Number of species") + 
     facet_wrap(~taxa, scales = "free")
-p5b <- p5o + 
+p5b <- p5o + # подложка из доверительных областей
     geom_ribbon(aes(ymin = qD.LCL, ymax = qD.UCL), alpha = 0.3, color = "transparent")
 p5o <- p5o +
     geom_line(data = filter(rar, Method != "Extrapolation")) +
     geom_line(data = filter(rar, Method == "Extrapolation"), linetype = "dashed") + 
     geom_point(data = filter(rar, Method == "Observed"), 
                shape = 15, size = 2)
+p5o # without confidence areas
+ggsave("Fig 5 with NO CI.pdf", width = 297*0.75, height = 150*0.75, units = "mm")
 
-p5b + 
+p5b + # with confidence areas
     geom_line(data = filter(rar, Method != "Extrapolation")) +
     geom_line(data = filter(rar, Method == "Extrapolation"), linetype = "dashed") + 
     geom_point(data = filter(rar, Method == "Observed"), 
                shape = 15, size = 2)
-p5o
+ggsave("Fig 5 with CI.pdf", width = 297*0.75, height = 180*0.75, units = "mm")
+
+
+# Табл. 4. Структура мероценозов ------------------------------------------
+export.tables$tab.4_mer.structure <- data.frame(
+    x = "Не совсем понял в чем отличе от табл. 3. Это просто её усечённая версия?")
 
 # + Рис. 6. Кладограмма по фаунистическим спискам отдельных мероценозов --------
 dis <- list()
@@ -269,7 +282,8 @@ dend <- lapply(dis, function(a){
         set("labels_cex", 0.5)
     })
 
-par(mfrow = c(2,2))
+# par(mfrow = c(2,2))
+pdf("Fig 6. Dendrogramms.pdf", width = 7, height = 7)
 plot(dend[[1]],
     horiz = TRUE, 
     main = "Order = Oribatida\n Data = binary (Jaccard)\n Method = Ward")
@@ -282,7 +296,8 @@ plot(dend[[3]],
 plot(dend[[4]],
      horiz = TRUE, 
      main = "Order = Mesostigmata\n Data = numeric (Bray-Curtis)\n Method = Ward")
-par(mfrow = c(1,1))
+dev.off()
+# par(mfrow = c(1,1))
 
 # + Рис. 7. Видовое богатство по сериям  ------------------------------------
 # в среднем в пробе этой серии
@@ -325,7 +340,8 @@ p7 <- div %>%
     theme(axis.text.x = element_text(angle = 90)) +
     labs(x = NULL, fill = NULL, #y = "Среднее количество видов в серии ± SD")
          y = "Average number of species in seria ± SD")
-ggsave("plot_7.pdf", p7, width = 297/25, height = 210/25)
+p7
+ggsave("Fig 7. Diversity by series.pdf", p7, width = 297/25, height = 210/25)
 
 # + Рис. 8. Ареалогический состав по сериям: качественный и количест --------
 p8 <- rbind(mutate(mswi, Order = "Mesostigmata", .before = 1), 
@@ -366,7 +382,7 @@ p8 <- rbind(mutate(mswi, Order = "Mesostigmata", .before = 1),
         labs(y = "Ratio, %", x = NULL, fill = NULL) + 
         theme(axis.text.x = element_text(angle = 90))
 p8
-ggsave("plot_8.pdf", p4, height = 210/40, width = 297/40)
+ggsave("Fig 8. Range compound.pdf", p8, height = 210/40, width = 297/40)
 
 # + Табл. 5. Виды-специалисты (индикаторы) ----------------------------------
 
@@ -443,7 +459,12 @@ iv.i <- iv.i$str %>%
     left_join(select(taxa, sp, order), by = "sp") %>% 
     select(order, sp:sign_i)
 
-full_join(iv.s, iv.i, by = c("order", "sp", "biotop")) %>% 
+export.tables$tab.5_indicator_species <- full_join(
+    iv.s, 
+    iv.i, 
+    by = c("order", "sp", "biotop"))
+
+export.tables$tab.5_indicator_species %>% 
     DT::datatable(., 
                   filter = 'top', 
                   extensions = c('FixedColumns',"FixedHeader"),
@@ -452,9 +473,9 @@ full_join(iv.s, iv.i, by = c("order", "sp", "biotop")) %>%
                                  fixedHeader=TRUE)) %>% 
     DT::formatStyle(
         'sp', fontStyle = list(fontStyle = 'italic'))
+export.tables$tab.5_indicator_species
     
-    
-# Рис. 9. ССА распределения видов -----------------------------------------
+# + Рис. 9. ССА распределения видов -----------------------------------------
 # Факторы: тип берега (? 1-4), 
 # тип растительности (рогозы, злаки, ситники, хвощ, лох, тростники), 
 # расстояние до моря (м), RH%, C%  
@@ -463,8 +484,41 @@ full_join(iv.s, iv.i, by = c("order", "sp", "biotop")) %>%
 "https://gist.github.com/perrygeo/7572735"
 "https://pmassicotte.github.io/stats-denmark-2019/07_rda.html#/redundancy-analysis"
 
-library(vegan)
-library(labdsv)
+comm <- labs %>% 
+    group_by(seria) %>% 
+    summarise(
+        plants_ = paste0(unique(plants.d), collapse = " / "), 
+        coast_ = unique(coast), 
+        RH = mean(RH)) %>% 
+    column_to_rownames("seria")
+
+comm <- list(orws = orws, 
+             msws = msws, 
+             msws2= select(msws, !starts_with("SdC"))) %>% 
+    map(~ .x %>% 
+        select_if(~ !is.numeric(.) || sum(.) > 1) %>% 
+        column_to_rownames("sp") %>% 
+        t %>% 
+        as.data.frame() 
+    ) %>% 
+    lapply(function(a){
+        df0 <- comm[match(rownames(a), rownames(comm)),]
+        if(prod(rownames(df0) == rownames(a)) == 1){ 
+            vegan::cca(a, df0)
+        } else { 
+            "Somethng is wrong"
+        }
+    })
+
+pdf("Fig 9. Canonycal analysis.pdf", height = 7, width = 10)
+plot(comm[[1]], main = "Oribatida")
+plot(comm[[2]], main = "Mesostigmata_all")
+plot(comm[[3]], main = "Mesostigmata_crop")
+dev.off()
+
+summary(comm[[1]])
+summary(comm[[2]])
+summary(comm[[3]])
 
 # + Рис. 10. Ординация мероценозов Mesostigmata и Oribatida  ----------------
 
@@ -530,8 +584,40 @@ p10b <- ggplot(M2, aes(x = axis1, y = axis2, color = coast)) +
     labs(x = NULL, y = NULL, color  = NULL, #subtitle = "A. Тип берега")
          subtitle = "B. Coast type") 
 p10 <- gridExtra::grid.arrange(p10a, p10b, ncol = 1) #, left = "Суммарное обилие в серии, экз.")
-ggsave("plot_10.pdf", p10, width = 210/25, height = 297/25)
+ggsave("Fig 10. Ordination.pdf", p10, width = 210/25, height = 297/25)
 
 
+# export tables -----------------------------------------------------------
+export.tables$tab.1_samples <- readxl::read_excel(
+        "Caspian data_01.03.2023_SA.xlsx", sheet = "samples") %>% 
+    filter(distr == "Samoor", code != "SmSw") %>% 
+    transmute(seria = substr(id, 3, 6), 
+              coast = case_when(coast == "sandy dunes" ~ "dunes", TRUE ~ coast),
+              parcella = plants.d, 
+              N = as.numeric(N), 
+              E = as.numeric(E), 
+              plant.dominants = plants.sp,
+              substrate, 
+              soil, 
+              RH) %>% 
+    group_by(seria) %>% 
+        summarise_all(function(a){
+            if(is.numeric(a)){
+                round(mean(a, na.rm = TRUE), 3)
+            } else { 
+                paste0(unique(a), collapse = ", ")
+            }
+        })
+export.tables$tab.1_samples$plant.dominants <- export.tables$tab.1_samples$plant.dominants %>% 
+    as.list() %>% 
+    map_chr(~.x %>% 
+            str_split_1(", ") %>% 
+            unique() %>% 
+            str_subset(".+") %>% 
+            paste0(collapse = ", "))
+
+writexl::write_xlsx(
+    export.tables[order(names(export.tables))], 
+    "Samoor_tables_07.07.2023.xlsx")
 
 
