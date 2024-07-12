@@ -1,3 +1,4 @@
+cat("the new version of the calculations")
 # loading -----------------------------------------------------------------
 library(indicspecies)
 library(tidyverse)
