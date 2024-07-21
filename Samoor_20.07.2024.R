@@ -3,7 +3,7 @@ library(indicspecies)
 library(tidyverse)
 library(dendextend)
 library(parallel)
-# cl <- makeCluster(detectCores()-1)
+cl <- makeCluster(detectCores()-1)
 theme_set(theme_bw() + theme(legend.position = "bottom"))
 
 long <- readxl::read_excel("Caspian data_21.07.2024_SA.xlsx", sheet = "main") %>% 
@@ -20,22 +20,22 @@ long <- readxl::read_excel("Caspian data_21.07.2024_SA.xlsx", sheet = "main") %>
         .keep = "unused")
 
 orwi <- long %>% 
-    filter(O == "Oribatida") %>% 
+    filter(O == "Oribatida", abu > 0) %>% 
     select(-O) %>%
     pivot_wider(names_from = id, values_from = abu, values_fn = sum, values_fill = 0)
 orws <- long %>% 
-    filter(O == "Oribatida") %>% 
+    filter(O == "Oribatida", abu > 0) %>% 
     mutate(seria = substr(id, 1, nchar(id)-1)) %>% 
     select(-O, -id) %>% 
     pivot_wider(names_from = seria, values_from = abu, values_fn = sum, values_fill = 0)
 mswi <- long %>% 
-    filter(O == "Mesostigmata") %>% 
-    select(-O, -age) %>%
+    filter(O == "Mesostigmata", abu > 0) %>% 
+    select(-O) %>%
     pivot_wider(names_from = id, values_from = abu, values_fn = sum, values_fill = 0)
 msws <- long %>% 
-    filter(O == "Mesostigmata") %>% 
+    filter(O == "Mesostigmata", abu > 0) %>% 
     mutate(seria = substr(id, 1, 4)) %>% 
-    select(-O, -id, -age) %>%
+    select(-O, -id) %>%
     pivot_wider(names_from = seria, values_from = abu, values_fn = sum, values_fill = 0)
 
 
@@ -51,9 +51,9 @@ labs <- readxl::read_excel("Caspian data_21.07.2024_SA.xlsx", sheet = "samples")
               RH) %>% 
     separate(plants.d, sep = " ", into = "plants.d", extra = "drop")
 taxa <- readxl::read_excel("Caspian data_21.07.2024_SA.xlsx", sheet = "taxa") %>% 
-    select(sp, area2, order, family)
+    select(sp, area, area2, order, family)
 
-export.tables <- list()
+tables <- list()
 
 # + Рис. 4. Обилие микроартропод по типам берега и парцеллам  ---------------
 abundance <- long %>% 
@@ -129,7 +129,7 @@ cor.pval1 <- expand_grid(v1 = 2:ncol(cor.data1), v2 = 2:ncol(cor.data1)) %>%
     column_to_rownames("v1") %>% 
     as.matrix()
 
-pdf("Fig-tab 2. Correlation_id.samples.pdf", width = 6, height = 6)
+pdf("Fig-tab 2. Correlation_by.samples.pdf", width = 6, height = 6)
 corrplot::corrplot(
     corr = cor.val1[1:5,], 
     p.mat = cor.pval1[1:5,], 
@@ -140,24 +140,77 @@ corrplot::corrplot(
     sig.level = 0.05)
 dev.off()
 
-export.tables$tab.2_corr_samples <- paste(
+tables$tab2_cor_id.samples <- paste(
         "ρ=", round(cor.val1, 2), "; p=", round(cor.pval1, 2), sep = "") %>% 
-    matrix(ncol = 6, byrow = TRUE) %>% 
+    matrix(ncol = 9, byrow = TRUE) %>% 
     `colnames<-`(colnames(cor.val1)) %>% 
     `rownames<-`(rownames(cor.val1)) %>% 
     as.data.frame() %>% 
     rownames_to_column("taxa") 
-export.tables$tab.2_correlation
+tables$tab2_cor_id.samples
 
-# + Табл. 3. Таксономический состав панцирных и мезостигматических к --------
-export.tables$tab.3_all_species <- long %>% 
+# + Табл. 3/4. Таксономический состав панцирных и мезостигматических к --------
+tables$tab.3_all_species <- long %>% 
+    filter(O != "total", abu > 0) %>% 
     left_join(labs, by = "id") %>% 
-    group_by(coast, sp) %>% 
+    group_by(O, sp, coast) %>% 
     summarise(abu = sum(abu), .groups = "drop") %>% 
-    pivot_wider(names_from = coast, values_from = abu, values_fill = 0) %>% 
+    mutate(abu = case_when(abu == 0 ~ "", TRUE ~ "+")) %>% 
+    pivot_wider(names_from = coast, values_from = abu, values_fill = "") %>% 
     left_join(taxa, by = "sp") %>% 
-    select(order, family, species = sp, range = area2, `sandy beach`, pebbly, dunes, reeds) 
-export.tables$tab.3_all_species
+    select(O, family, sp, distribution = area, range = area2, 
+           sandy = `sandy beach`, pebbly, dunes, reeds)
+tables$tab.3_all_species <- long %>% 
+    filter(O != "total", abu > 0) %>% 
+    left_join(labs, by = "id") %>% 
+    group_by(O, sp) %>% 
+    summarise(plants = paste0(sort(unique(plants.d)), collapse = ", "), 
+              .groups = "drop") %>% 
+    left_join(tables$tab.3_all_species, ., by = c("O", "sp")) %>% 
+    rename(Order = O, Species = sp, Family = family)
+
+tables$tmp0 <- long %>% 
+    filter(O == "Mesostigmata" | O == "Oribatida") %>% 
+    group_by(O, sp) %>% 
+    mutate(
+        dom = max(abu), 
+        sp = case_when(
+            O == "Mesostigmata" & dom < 15 ~ "other Mesostigmata", 
+            O == "Oribatida" & dom < 20 ~ "other Oribatida", 
+            TRUE ~ sp)) %>% 
+    group_by(O, sp, id) %>% 
+    summarise(abu = sum(abu), .groups = "drop") %>% 
+    left_join(select(labs, id, plants.d, coast), by = "id")
+
+tables$tmp1 <- tables$tmp0 %>% 
+    arrange(plants.d) %>% 
+    select(-id, -coast) %>% 
+    mutate(plants.d = paste0("PL_", plants.d)) %>% 
+    #
+    # Перевод на среднее обилие вида в такой пробе,
+    # т.к. иначе разница еще и изза разницы в кол-ве проб
+    group_by(O, sp, plants.d) %>%
+    summarise(abu = mean(abu), .groups = "drop") %>%
+    #
+    pivot_wider(names_from = plants.d, values_from = abu, values_fn = sum) %>% 
+    mutate_if(is.numeric, function(a){round(a, 2)})
+    
+ tables$tmp2 <- tables$tmp0 %>% 
+    arrange(coast) %>% 
+    select(-id, -plants.d) %>% 
+    mutate(coast = paste0("S_", coast)) %>% 
+    #
+    # Перевод на среднее обилие вида в такой пробе,
+    # т.к. иначе разница еще и изза разницы в кол-ве проб
+    group_by(O, sp, coast) %>%
+    summarise(abu = mean(abu), .groups = "drop") %>%
+    #
+    pivot_wider(names_from = coast, values_from = abu, values_fn = sum) %>% 
+    mutate_if(is.numeric, function(a){round(a, 2)}) 
+
+tables$tab.4_dom_species <- left_join(
+    tables$tmp2, tables$tmp1, by = c("O", "sp")
+    )
 
 # + Рис. 5. Куммуляты по типам берега (АС). ---------------------------------
 s <- Sys.time()
@@ -220,21 +273,16 @@ p5o <- p5o +
     geom_point(data = filter(rar, Method == "Observed"), 
                shape = 15, size = 2)
 p5o # without confidence areas
-ggsave("Fig 5 with NO CI.pdf", width = 297*0.75, height = 150*0.75, units = "mm")
+ggsave("Fig 5 with NO CI.pdf", width = 297*0.6, height = 150*0.6, units = "mm")
 
 p5b + # with confidence areas
     geom_line(data = filter(rar, Method != "Extrapolation")) +
     geom_line(data = filter(rar, Method == "Extrapolation"), linetype = "dashed") + 
     geom_point(data = filter(rar, Method == "Observed"), 
                shape = 15, size = 2)
-ggsave("Fig 5 with CI.pdf", width = 297*0.75, height = 180*0.75, units = "mm")
+ggsave("Fig 5 with CI.pdf", width = 297*0.6, height = 150*0.6, units = "mm")
 
-
-# Табл. 4. Структура мероценозов ------------------------------------------
-export.tables$tab.4_mer.structure <- data.frame(
-    x = "Не совсем понял в чем отличе от табл. 3. Это просто её усечённая версия?")
-
-# + Рис. 6. Кладограмма по фаунистическим спискам отдельных мероценозов --------
+# - Рис. 6. Кладограмма по фаунистическим спискам отдельных мероценозов --------
 dis <- list()
 # dissimilarity
 dis$or.bin <- orwi %>% 
