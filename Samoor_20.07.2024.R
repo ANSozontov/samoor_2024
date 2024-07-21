@@ -1,36 +1,32 @@
-# cat("the new version of the calculations")
 # loading -----------------------------------------------------------------
 library(indicspecies)
 library(tidyverse)
 library(dendextend)
 library(parallel)
-cl <- makeCluster(detectCores()-1)
+# cl <- makeCluster(detectCores()-1)
 theme_set(theme_bw() + theme(legend.position = "bottom"))
- 
-version
-cat("The package's used versions\n"); sessionInfo() %>% 
-    pluck("otherPkgs") %>% 
-    map_dfr(~tibble(Package = .x$Package, Version = .x$Version)) %>% 
-    arrange(Package)
 
-long <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "main") %>% 
-    select(O:SmSdTu5) %>% 
-    mutate_all(as.character) %>% 
-    pivot_longer(names_to = "id", values_to = "v", -c("O", "sp")) %>% 
+long <- readxl::read_excel("Caspian data_21.07.2024_SA.xlsx", sheet = "main") %>% 
+    select(O, sp, contains("Sm", ignore.case = FALSE)) %>% 
+    pivot_longer(
+        names_to = "id",
+        values_to = "v", 
+        -c("O", "sp"), 
+        values_transform = as.character) %>%
     separate(v, into = c("ad", "jv"), sep = "\\+", convert = TRUE) %>% # 
-    pivot_longer(names_to = "age", values_to = "abu", -c(1:3)) %>% 
-    mutate(id = substr(id, 3, 7)) %>%  # seria = substr(id, 1, 4)) %>%  #id = str_replace_all(id, "_", "")) %>% 
-    filter(!is.na(abu)) %>% # seria != "Sw__") %>% 
-    arrange(id)
+    mutate(
+        id = substr(id, 3, 7), 
+        abu = ad+case_when(is.na(jv) ~ 0, TRUE ~ jv), 
+        .keep = "unused")
 
 orwi <- long %>% 
-    filter(O == "Oribatida", sp != "Oribatida_juvenile_indet") %>% 
-    select(-O, -age) %>% 
+    filter(O == "Oribatida") %>% 
+    select(-O) %>%
     pivot_wider(names_from = id, values_from = abu, values_fn = sum, values_fill = 0)
 orws <- long %>% 
-    filter(O == "Oribatida", sp != "Oribatida_juvenile_indet") %>% 
-    mutate(seria = substr(id, 1, 4)) %>% 
-    select(-O, -id, -age) %>% 
+    filter(O == "Oribatida") %>% 
+    mutate(seria = substr(id, 1, nchar(id)-1)) %>% 
+    select(-O, -id) %>% 
     pivot_wider(names_from = seria, values_from = abu, values_fn = sum, values_fill = 0)
 mswi <- long %>% 
     filter(O == "Mesostigmata") %>% 
@@ -43,80 +39,79 @@ msws <- long %>%
     pivot_wider(names_from = seria, values_from = abu, values_fn = sum, values_fill = 0)
 
 
-labs <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "samples") %>% 
-    filter(distr == "Samoor", code != "SmSw") %>% 
+labs <- readxl::read_excel("Caspian data_21.07.2024_SA.xlsx", sheet = "samples") %>% 
+    filter(distr == "Samoor") %>% 
     transmute(id = substr(id, 3, 7), 
-              seria = substr(id, 1, 4), 
+              seria = substr(id, 1, nchar(id)-1), 
               plants.d, 
               coast = case_when(coast == "sandy dunes" ~ "dunes", TRUE ~ coast),
-              # C, %
+              N = `N, %`, 
+              C = `C, %`, 
+              CN = `C/N`,
               RH) %>% 
     separate(plants.d, sep = " ", into = "plants.d", extra = "drop")
-taxa <- readxl::read_excel("Caspian data_01.03.2023_SA.xlsx", sheet = "taxa") %>% 
+taxa <- readxl::read_excel("Caspian data_21.07.2024_SA.xlsx", sheet = "taxa") %>% 
     select(sp, area2, order, family)
 
 export.tables <- list()
 
 # + Рис. 4. Обилие микроартропод по типам берега и парцеллам  ---------------
 abundance <- long %>% 
-    filter(O == "total", 
-           !(sp %in% c("Oribatida_adult", 
-                       "Oribatida_juvenile_det", 
-                       "Oribatida_juvenile_indet"))) %>% 
-    pivot_wider(names_from = sp, values_from = abu) %>% 
-    select(-O, -age) %>% 
-    left_join(labs, ., by = "id") %>% 
-    pivot_longer(names_to = "taxa", values_to = "abu", -c(id:coast)) %>% 
+    filter(O == "total", str_detect(sp, "adult|juven", negate = TRUE)) %>% 
+    left_join(labs, by = "id") %>%
     mutate(
-        seria = substr(id, 1, 4), 
-        taxa = str_replace_all(taxa, "_total", ""),
-        taxa = factor(taxa, levels = c("Collembola", "Astigmata", 
-            "Mesostigmata", "Oribatida", "Prostigmata")), 
-        .before = 2)
+        sp = str_replace_all(sp, "_total", ""),
+        sp = factor(sp, levels = c("Collembola", "Astigmata", 
+            "Mesostigmata", "Oribatida", "Prostigmata")))
+    
 xaxis <- c("SdJj", "SdEq", "SdTu", "SdEc", "SdTa", "SdJm", "SdFn", 
-    "PbAe", "PbDe", "PbPo", "PbTu", "PbTl", "SdCJ", "SdCS", "RsFd") 
+    "PbAe", "PbDe", "PbPo", "PbTu", "PbTl", "DuCJ", "DuCS", "RsFd", "Sw") 
 
 p4a <- abundance %>% 
-    group_by(seria, coast, taxa) %>% 
+    group_by(seria, coast, sp) %>% 
     summarise(abu = sum(abu), 
               plants.e = paste0(unique(plants.d), collapse = " / "), 
               .groups = "drop") %>% 
-    ggplot(aes(x = seria, y = abu, fill = taxa)) + 
+    ggplot(aes(x = seria, y = abu, fill = sp)) + 
     geom_col(width = 0.68) + 
-    geom_text(mapping = aes(y = 3500, label = plants.e), angle = 90, color = "black", fontface = "italic") +
-    geom_text(mapping = aes(y = 1900, label = coast), angle = 90, color = "black") +
+    geom_text(mapping = aes(y = 3000, label = plants.e), angle = 90, color = "black", fontface = "italic") +
+    geom_text(mapping = aes(y = 5200, label = coast), angle = 90, color = "black") +
     scale_fill_manual(values = c("#ABA300", "#C77CFF", "#00B8E7", "#F8766D", "#00c19A"), drop = TRUE) + 
     scale_x_discrete(limits = xaxis) +
     labs(y = NULL, x = NULL, fill = NULL) + 
-    theme(axis.text.x = element_text(angle = 90, hjust = -0.5))
+    theme(axis.text.x = element_text(angle = 90, hjust = -0.5), 
+          legend.position = "top")
 p4b <- abundance %>% 
-    filter(taxa %in% c("Oribatida", "Mesostigmata")) %>% 
-    group_by(seria, coast, taxa) %>%  
+    filter(sp %in% c("Oribatida", "Mesostigmata")) %>% 
+    group_by(seria, coast, sp) %>%  
     summarise(abu = sum(abu), 
               plants.e = paste0(unique(plants.d), collapse = " / "), 
               .groups = "drop") %>% 
-    ggplot(aes(x = seria, y = abu, fill = taxa)) + 
+    ggplot(aes(x = seria, y = abu, fill = sp)) + 
     geom_col(width = 0.68) + 
-    geom_text(mapping = aes(y = 600, label = plants.e), angle = 90, color = "black", fontface = "italic") +
-    geom_text(mapping = aes(y = 300, label = coast), angle = 90, color = "black") +
+    geom_text(mapping = aes(y = 1200, label = plants.e), angle = 90, color = "black", fontface = "italic") +
+    geom_text(mapping = aes(y = 2000, label = coast), angle = 90, color = "black") +
     scale_x_discrete(limits = xaxis) +
+    scale_y_reverse() + 
     scale_fill_manual(values = c("#00B8E7", "#F8766D")) + 
     guides(fill="none") +
-    labs(y = NULL, x = NULL)+ 
-    theme(axis.text.x = element_blank())
+    labs(y = NULL, x = NULL) + 
+    theme(axis.text.x = element_text(angle = 90, hjust = -0.5))
 p4 <- gridExtra::grid.arrange(p4a, p4b, ncol = 1, 
                               left = "Total abundance, individuals")
 ggsave("Fig 4. General abundances.pdf", plot = p4, width = 297/25, height = 210/25)   
 
 # + Табл. 2. Корреляция обилия групп друг с другом и RH%, C%. ---------------
-# By samples 
+# BY SAMPLES
+# Сделано по пробам (не по сериям). Это корректнее, т.к. у каждой серии 
+# не только свой набор видов, но и свои значения факторов среды
 cor.data1 <- long %>% 
-    filter(sp %in% c("Astigmata_total", "Collembola", "Mesostigmata_total", "Oribatida_total", "Prostigmata")) %>% 
+    filter(O == "total", str_detect(sp, "adult|juven", negate = TRUE)) %>% 
     transmute(sp = str_replace(sp, "_total", ""), 
               id, 
               abu) %>% 
     pivot_wider(names_from = sp, values_from = abu) %>% 
-    left_join(select(labs, id, RH), by = "id")
+    left_join(select(labs, id, N:RH), by = "id")
 
 cor.val1 <- cor(cor.data1[,2:ncol(cor.data1)], method = "spearman")
 cor.pval1 <- expand_grid(v1 = 2:ncol(cor.data1), v2 = 2:ncol(cor.data1)) %>% 
@@ -134,18 +129,18 @@ cor.pval1 <- expand_grid(v1 = 2:ncol(cor.data1), v2 = 2:ncol(cor.data1)) %>%
     column_to_rownames("v1") %>% 
     as.matrix()
 
-pdf("Fig-tab 2. Correlation.pdf", width = 6, height = 6)
+pdf("Fig-tab 2. Correlation_id.samples.pdf", width = 6, height = 6)
 corrplot::corrplot(
-    corr = cor.val1, 
-    p.mat = cor.pval1, 
+    corr = cor.val1[1:5,], 
+    p.mat = cor.pval1[1:5,], 
     type="upper", 
     order = "original",
     diag = FALSE,
     col =  corrplot::COL2('RdYlBu', 10)[10:1], 
     sig.level = 0.05)
-dev.off() 
+dev.off()
 
-export.tables$tab.2_correlation <- paste(
+export.tables$tab.2_corr_samples <- paste(
         "ρ=", round(cor.val1, 2), "; p=", round(cor.pval1, 2), sep = "") %>% 
     matrix(ncol = 6, byrow = TRUE) %>% 
     `colnames<-`(colnames(cor.val1)) %>% 
