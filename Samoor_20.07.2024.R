@@ -361,7 +361,9 @@ div <- mswi %>%
 
 p7 <- div %>% 
     select(-id) %>% 
-    pivot_longer(names_to = "taxa", values_to = "nsp", -c("seria", "coast", "plants.d")) %>% 
+    pivot_longer(
+        names_to = "taxa", values_to = "nsp", 
+        -c("seria", "coast", "plants.d", "C", "CN", "N")) %>% 
     group_by(seria, taxa) %>% 
     summarise(
         coast = paste0(unique(coast), collapse = " / "), 
@@ -380,7 +382,7 @@ p7 <- div %>%
     geom_text(mapping = aes(y = 10, label = plants.e), angle = 90, color = "black") +
     geom_text(mapping = aes(y = 4, label = coast), angle = 90, color = "black") +
     scale_x_discrete(limits = xaxis) +
-    scale_fill_manual(values = c("#00B8E7", "#F8766D")) + 
+    scale_fill_manual(values = c("#00B8E7", "#F8766D")) +
     theme(axis.text.x = element_text(angle = 90)) +
     labs(x = NULL, fill = NULL, #y = "Среднее количество видов в серии ± SD")
          y = "Average number of species in seria ± SD")
@@ -397,7 +399,7 @@ p8 <- rbind(mutate(mswi, Order = "Mesostigmata", .before = 1),
     filter(area2 != "unknown" | Order != "Oribatida & Mesostigmata", 
            abu > 0) %>%
     transmute(
-              seria = substr(id, 1, 4), 
+              seria = substr(id, 1, nchar(id)), 
               area2 = factor(area2, ordered = TRUE, levels = 
                                  c("(Semi)Cosmopolitan", "Holarctic", "Palaearctic", 
                                    "European-Caucasian", "Mediterranean-Caucasian",
@@ -568,7 +570,7 @@ summary(comm[[3]])
 
 # pcoa
 PCOA <- dis %>% 
-    parLapply(cl = cl, ., function(a){
+    lapply(function(a){
         p <- ape::pcoa(a)
         e <- p$values$Eigenvalues
         if(min(e) < 0){

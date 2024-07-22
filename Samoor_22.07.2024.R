@@ -272,8 +272,8 @@ ggsave("Fig 5 with CI.pdf", width = 297*0.6, height = 150*0.6, units = "mm")
 dis <- list()
 # dissimilarity
 dis$or.bin <- orwi %>% 
-    column_to_rownames("sp") %>% 
-    select_if(function(a){sum(a)>0}) %>% 
+    column_to_rownames("sp") %>%
+    select_if(function(a){sum(a)>0}) %>%
     t %>% 
     as.data.frame() %>% 
     vegan::vegdist(method = "jaccard", binary = TRUE)
@@ -573,7 +573,7 @@ summary(comm[[4]])
 
 # pcoa
 PCOA <- dis %>% 
-    parLapply(cl = cl, ., function(a){
+    lapply(function(a){
         p <- ape::pcoa(a)
         e <- p$values$Eigenvalues
         if(min(e) < 0){
@@ -592,17 +592,18 @@ PCOA <- dis %>%
 M2 <- PCOA %>% 
     pluck("pc") %>% 
     map_df(rbind, .id = "D") %>% 
+    filter(str_detect(id, "Sw", negate = TRUE)) %>% 
     separate(D, into = c("taxa", "type")) %>% 
     left_join(labs, by = "id") %>% 
     select(taxa:coast) %>% 
     mutate(
-        axis1 = case_when(taxa == "ms" & type == "bin" ~ axis1*-1, TRUE ~ axis1),
+        # axis1 = case_when(taxa == "ms" & type == "bin" ~ axis1*-1, TRUE ~ axis1),
         axis1 = case_when(taxa == "or" & type == "bin" ~ axis1*-1, TRUE ~ axis1),
-        axis2 = case_when(taxa == "or" & type == "num" ~ axis2*-1, TRUE ~ axis2),
+        axis2 = case_when(taxa == "or" & type == "bin" ~ axis2*-1, TRUE ~ axis2),
         taxa = case_when(taxa == "or" ~ "Oribatida", TRUE ~ "Mesostigmata"), 
         type = case_when(type == "bin" ~ "Binary data (Jaccard)", 
-                         TRUE ~ "Numeric data (Bray-Curtis)")) %>% 
-    filter(!is.na(coast))
+                         TRUE ~ "Numeric data (Bray-Curtis)")) 
+
 eig <- PCOA %>%
     pluck("eig") %>%
     map(~data.frame(axis1 = .x[1], axis2 = .x[2])) %>%
@@ -614,7 +615,10 @@ eig <- PCOA %>%
                             TRUE ~ "Numeric data (Bray-Curtis)"))
 
 
-p10a <- ggplot(M2, aes(x = axis1, y = axis2, color = plants.d)) + 
+p10a <- M2 %>% 
+    select(-id) %>% 
+    distinct() %>% 
+    ggplot(aes(x = axis1, y = axis2, color = plants.d)) + 
     geom_point() + 
     stat_ellipse() +
     geom_text(aes(label = axis1, x = 0, y = -0.77), color = "black", data = eig, alpha = 0.68) +
@@ -623,7 +627,10 @@ p10a <- ggplot(M2, aes(x = axis1, y = axis2, color = plants.d)) +
     labs(x = NULL, y = NULL, color = NULL, #subtitle = "Б. Доминантные виды растений") + 
          subtitle = "A. Dominant plant species") + 
     theme(legend.text = element_text(face = "italic"))
-p10b <- ggplot(M2, aes(x = axis1, y = axis2, color = coast)) + 
+p10b <- M2 %>% 
+    select(-id) %>% 
+    distinct() %>% 
+    ggplot(aes(x = axis1, y = axis2, color = coast)) + 
     geom_point() + 
     stat_ellipse() +
     geom_text(aes(label = axis1, x = 0, y = -0.63), color = "black", data = eig, alpha = 0.68) +
@@ -637,36 +644,9 @@ ggsave("Fig 10. Ordination.pdf", p10, width = 210/25, height = 297/25)
 
 
 # export tables -----------------------------------------------------------
-export.tables$tab.1_samples <- readxl::read_excel(
-        "Caspian data_01.03.2023_SA.xlsx", sheet = "samples") %>% 
-    filter(distr == "Samoor", code != "SmSw") %>% 
-    transmute(seria = substr(id, 3, 6), 
-              coast = case_when(coast == "sandy dunes" ~ "dunes", TRUE ~ coast),
-              parcella = plants.d, 
-              N = as.numeric(N), 
-              E = as.numeric(E), 
-              plant.dominants = plants.sp,
-              substrate, 
-              soil, 
-              RH) %>% 
-    group_by(seria) %>% 
-        summarise_all(function(a){
-            if(is.numeric(a)){
-                round(mean(a, na.rm = TRUE), 3)
-            } else { 
-                paste0(unique(a), collapse = ", ")
-            }
-        })
-export.tables$tab.1_samples$plant.dominants <- export.tables$tab.1_samples$plant.dominants %>% 
-    as.list() %>% 
-    map_chr(~.x %>% 
-            str_split_1(", ") %>% 
-            unique() %>% 
-            str_subset(".+") %>% 
-            paste0(collapse = ", "))
-
-writexl::write_xlsx(
-    export.tables[order(names(export.tables))], 
-    "Samoor_tables_07.07.2023.xlsx")
+tables %>% 
+    .[str_detect(names(tables), "tab")] %>% 
+    writexl::write_xlsx("samoor_tables.xlsx")
+    
 
 
