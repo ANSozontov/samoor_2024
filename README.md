@@ -1,2 +1,2 @@
-# Kaspian mites: 2023
- ANSozontov/kasp_2023
+# Kaspian mites: 2024
+ ANSozontov/kasp_2024
