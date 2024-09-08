@@ -657,8 +657,10 @@ p10a <- M2 %>%
     ggplot(aes(x = axis1, y = axis2, color = plants.d)) + 
     geom_point() + 
     stat_ellipse() +
-    geom_text(aes(label = axis1, x = 0, y = -0.77), color = "black", data = eig, alpha = 0.68) +
-    geom_text(aes(label = axis2, x = -0.99, y = 0), color = "black", data = eig, alpha = 0.68, angle = 90) +
+    geom_text(aes(label = axis1, x = 0, y = -0.77), color = "black",alpha = 0.68, 
+              data = eig, ) +
+    geom_text(aes(label = axis2, x = -0.99, y = 0), color = "black", alpha = 0.68, 
+              data = eig, angle = 90) +
     facet_grid(cols = vars(type), rows = vars(taxa)) + 
     labs(x = NULL, y = NULL, color = NULL, #subtitle = "Б. Доминантные виды растений") + 
          subtitle = "A. Dominant plant species") + 
